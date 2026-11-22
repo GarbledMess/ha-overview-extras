@@ -1,0 +1,63 @@
+"""Work out which entities feed each room's extras."""
+
+from __future__ import annotations
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr, entity_registry as er
+
+from .const import CATEGORIES, CONF_SOURCES_EXCLUDED, DOMAIN, PRESENCE_CLASSES
+
+
+def _category(hass: HomeAssistant, entry: er.RegistryEntry) -> str | None:
+    domain = entry.domain
+    if domain == "light":
+        return "lights"
+    if domain not in ("sensor", "binary_sensor"):
+        return None
+    device_class = entry.device_class or entry.original_device_class
+    if device_class is None and (state := hass.states.get(entry.entity_id)):
+        device_class = state.attributes.get("device_class")
+    if domain == "sensor" and device_class in ("temperature", "humidity", "power"):
+        return device_class
+    if domain == "binary_sensor" and device_class in PRESENCE_CLASSES:
+        return "presence"
+    return None
+
+
+def candidates_by_area(hass: HomeAssistant) -> dict[str, dict[str, list[str]]]:
+    """Every entity that could feed a room, grouped by room and category.
+
+    Same rules as the frontend: an entity belongs to a room if it, or its device, is
+    assigned there. Hidden, disabled, config/diagnostic and our own entities are skipped.
+    """
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    out: dict[str, dict[str, list[str]]] = {}
+    for entry in ent_reg.entities.values():
+        if entry.platform == DOMAIN or entry.disabled_by or entry.hidden_by or entry.entity_category:
+            continue
+        area_id = entry.area_id
+        if area_id is None and entry.device_id and (device := dev_reg.async_get(entry.device_id)):
+            area_id = device.area_id
+        if area_id is None:
+            continue
+        if (category := _category(hass, entry)) is None:
+            continue
+        out.setdefault(area_id, {c: [] for c in CATEGORIES})[category].append(entry.entity_id)
+    for cats in out.values():
+        for ids in cats.values():
+            ids.sort()
+    return out
+
+
+def excluded(options: dict, area_id: str, category: str) -> set[str]:
+    """Sources the user removed for this room and category."""
+    return set(options.get(CONF_SOURCES_EXCLUDED, {}).get(area_id, {}).get(category, []))
+
+
+def selected_sources(hass: HomeAssistant, options: dict) -> dict[str, dict[str, list[str]]]:
+    """Candidates minus what the user removed."""
+    return {
+        area_id: {cat: [e for e in ids if e not in excluded(options, area_id, cat)] for cat, ids in cats.items()}
+        for area_id, cats in candidates_by_area(hass).items()
+    }

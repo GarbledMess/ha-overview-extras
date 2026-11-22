@@ -46,8 +46,10 @@ async def test_full_lifecycle(hass: HomeAssistant, hass_client) -> None:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     assert result["type"] is FlowResultType.ABORT
 
-    # Change settings from the Configure dialog
+    # Change settings from the Configure dialog: menu -> General settings -> Save
     result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.MENU
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "settings"})
     assert result["type"] is FlowResultType.FORM
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
@@ -56,12 +58,14 @@ async def test_full_lifecycle(hass: HomeAssistant, hass_client) -> None:
             "show_power": True,
             "show_presence": True,
             "area_strip": True,
+            "set_primary": True,
             "badges": ["lights", "media"],
             "max_badges": 2,
-            "power_exclude": ["sensor.kitchen_circuit_power"],
             "exclude_entities": [],
         },
     )
+    assert result["type"] is FlowResultType.MENU
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "save"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
 
@@ -71,7 +75,6 @@ async def test_full_lifecycle(hass: HomeAssistant, hass_client) -> None:
     assert "show_glow=0" in url
     assert "badges=lights,media" in url
     assert "max_badges=2" in url
-    assert "power_exclude=sensor.kitchen_circuit_power" in url
 
     # Removing the integration stops the injection
     assert await hass.config_entries.async_remove(entry.entry_id)

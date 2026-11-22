@@ -14,7 +14,34 @@
   "options": {
     "step": {
       "init": {
-        "title": "Overview Extras settings",
+        "title": "Overview Extras",
+        "description": "Changes apply after you save and refresh the browser or app.",
+        "menu_options": {
+          "room_sources": "Room sources",
+          "settings": "General settings",
+          "save": "Save and close"
+        }
+      },
+      "room_sources": {
+        "title": "Room sources",
+        "description": "Pick a room to choose which entities feed its temperature, humidity, power, presence and lights.",
+        "data": {
+          "area": "Room"
+        }
+      },
+      "room": {
+        "title": "{area} sources",
+        "description": "Everything in {area} is included by default, and new entities added to the room are included automatically. Remove any you don't want. Temperature and humidity are averaged, and power is totalled.",
+        "data": {
+          "temperature": "Temperature (averaged)",
+          "humidity": "Humidity (averaged)",
+          "power": "Power (totalled)",
+          "presence": "Presence (occupied if any is on)",
+          "lights": "Lights (counted)"
+        }
+      },
+      "settings": {
+        "title": "General settings",
         "description": "Changes apply after you refresh the browser or app.",
         "data": {
           "show_glow": "Glow room cards when lights are on",
@@ -23,14 +50,17 @@
           "area_strip": "Status strip at the top of room pages",
           "badges": "Badges on room cards (in priority order)",
           "max_badges": "Maximum badges per room card",
-          "power_exclude": "Power sensors to leave out of room totals",
-          "exclude_entities": "Entities to ignore completely"
+          "exclude_entities": "Entities to ignore completely",
+          "set_primary": "Use the room averages as each room's temperature and humidity"
         },
         "data_description": {
-          "power_exclude": "Use this to stop double counting, for example a circuit meter plus the plugs on that circuit.",
-          "max_badges": "Room cards are small; extra badges are dropped."
+          "max_badges": "Room cards are small; extra badges are dropped.",
+          "set_primary": "Only fills rooms where you haven't chosen a temperature or humidity sensor yourself in the room's settings."
         }
       }
+    },
+    "abort": {
+      "no_sources": "{area} has no temperature, humidity, power, presence or light entities yet."
     }
   },
   "selector": {

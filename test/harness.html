@@ -146,7 +146,11 @@
     themes: { darkMode: false },
     calls: [],
     callService(d, s, data, target) { this.calls.push({ d, s, data, target }); return Promise.resolve(); },
-    callWS: async (msg) => (msg.type === "frontend/get_system_data" ? { value: { favorite_entities: [] } } : null),
+    callWS: async (msg) =>
+      msg.type === "frontend/get_system_data" ? { value: { favorite_entities: [] } }
+      // As if the user unticked the console's power plug in Configure -> Room sources -> Living Room.
+      : msg.type === "overview_extras/sources" ? { excluded: { living_room: { power: ["sensor.console_power"] } } }
+      : null,
     localize: () => "",
   };
 </script>

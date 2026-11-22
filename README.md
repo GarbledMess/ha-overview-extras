@@ -34,17 +34,43 @@ To remove it, delete the integration under Devices & services.
 
 ## Settings
 
-Go to Settings → Devices & services → Overview Extras → **Configure**:
+Go to Settings → Devices & services → Overview Extras → **Configure**. It has two screens: **Room sources** and **General settings**. Press **Save and close** when you're done, then refresh the browser or app.
+
+### Room sources
+
+Pick a room to choose which entities feed it:
+
+| Source | Used as |
+|---|---|
+| Temperature | Averaged |
+| Humidity | Averaged |
+| Power | Totalled |
+| Presence (occupancy, presence or motion) | Occupied if any is on |
+| Lights | Counted |
+
+Everything in the room is ticked by default, and new entities you add to the room are included automatically. Untick any you don't want, such as a sensor next to a radiator, or a smart plug that's already counted by a circuit meter.
+
+Each room also gets real entities built from those sources, which you can use in automations and history graphs:
+
+- `sensor.overview_extras_<room>_temperature`: average temperature
+- `sensor.overview_extras_<room>_humidity`: average humidity
+- `sensor.overview_extras_<room>_power`: total power, in W
+- `sensor.overview_extras_<room>_lights`: number of lights on
+- `binary_sensor.overview_extras_<room>_presence`: occupancy
+
+The average temperature and humidity are set as the room's own temperature and humidity sensors, so HA's room card shows the average. This only happens in rooms where you haven't already picked a sensor in the room's settings, and you can switch it off in General settings. Removing the integration gives the rooms back their setting.
+
+These entities are deliberately not assigned to the room, so they never count themselves.
+
+### General settings
 
 - Glow room cards when lights are on
 - Show total room power
 - Use occupancy and presence sensors for the presence icon
 - Status strip at the top of room pages
+- Use the room averages as each room's temperature and humidity
 - Which badges to show, and the maximum per card (room tiles are small, so the default is 3)
-- **Power sensors to leave out of room totals.** Use this to stop double counting, for example a circuit meter plus the plugs on that circuit.
 - Entities to ignore completely
-
-After changing settings, refresh the browser or app.
 
 ## Extras for custom dashboards
 
@@ -62,7 +88,7 @@ Once installed, these are also available everywhere:
   - Room pages get the status strip.
 - If a future HA release renames those internals, nothing is changed and you get the plain Overview. It never breaks it.
 
-Tested against Home Assistant 2026.2. The integration tests run against HA 2026.2.3, and the frontend was checked against build 20260128.
+Tested against Home Assistant 2026.2. The integration tests run against HA 2026.2.3 and cover setup, page injection, settings, room sources, averages, automatic pickup of new entities and removal. The frontend was checked against build 20260128.
 
 ## Development
 

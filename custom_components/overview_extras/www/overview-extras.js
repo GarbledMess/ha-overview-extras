@@ -10,7 +10,7 @@
  * No build step, no dependencies. Load as a dashboard resource (type: module).
  */
 
-const VERSION = "0.3.2";
+const VERSION = "0.4.0";
 
 /* ------------------------------------------------------------------------ */
 /* Constants                                                                 */
@@ -76,7 +76,7 @@ function areaIndex(hass) {
 /** Entities worth showing (not hidden, not config/diagnostic, not a hidden domain). */
 function isVisibleEntity(hass, id, extraHidden = []) {
   const e = hass.entities?.[id];
-  if (e && (e.hidden || e.entity_category)) return false;
+  if (e && (e.hidden || e.entity_category || e.platform === "overview_extras")) return false;
   if (HIDDEN_DOMAINS.has(domainOf(id))) return false;
   if (extraHidden.includes(id)) return false;
   return true;
@@ -108,7 +108,7 @@ const friendly = (hass, id) => hass.states[id]?.attributes?.friendly_name || id;
 /* Summary computation (shared by area + home cards)                         */
 /* ------------------------------------------------------------------------ */
 
-function avgSensor(hass, ids, deviceClass, preferred) {
+function avgSensor(hass, ids, deviceClass, preferred, excluded = []) {
   if (preferred && !isUnavail(hass.states[preferred])) {
     const s = hass.states[preferred];
     return { value: num(s.state), unit: s.attributes.unit_of_measurement || "", entity: preferred };
@@ -119,7 +119,7 @@ function avgSensor(hass, ids, deviceClass, preferred) {
   for (const id of ids) {
     if (domainOf(id) !== "sensor") continue;
     const s = hass.states[id];
-    if (isUnavail(s) || s.attributes.device_class !== deviceClass) continue;
+    if (isUnavail(s) || s.attributes.device_class !== deviceClass || excluded.includes(id)) continue;
     const v = num(s.state);
     if (v === null) continue;
     vals.push(v);
@@ -132,6 +132,9 @@ function avgSensor(hass, ids, deviceClass, preferred) {
 
 function summarize(hass, ids, opts = {}) {
   const powerExclude = new Set(opts.power_exclude || []);
+  // Per-room source choices from the integration's "Room sources" screen.
+  const ex = opts.sources_excluded || {};
+  const skip = (cat, id) => ex[cat]?.includes(id);
   const out = {
     lights: { on: [], total: 0 },
     presence: { sensors: [], occupied: false, since: null },
@@ -154,12 +157,13 @@ function summarize(hass, ids, opts = {}) {
 
     switch (d) {
       case "light":
-        if (s.state === "unavailable") break;
+        if (s.state === "unavailable" || skip("lights", id)) break;
         out.lights.total++;
         if (s.state === "on") out.lights.on.push(id);
         break;
       case "binary_sensor":
         if (PRESENCE_CLASSES.includes(dc)) {
+          if (skip("presence", id)) break;
           out.presence.sensors.push(id);
           if (s.state === "on") out.presence.occupied = true;
           const t = Date.parse(s.last_changed);
@@ -169,7 +173,7 @@ function summarize(hass, ids, opts = {}) {
         else if (dc === "battery" && s.state === "on") out.lowBattery.push(id);
         break;
       case "sensor": {
-        if (dc === "power" && !powerExclude.has(id) && !isUnavail(s)) {
+        if (dc === "power" && !powerExclude.has(id) && !skip("power", id) && !isUnavail(s)) {
           const f = POWER_FACTORS[s.attributes.unit_of_measurement];
           const v = num(s.state);
           if (f && v !== null) {
@@ -649,7 +653,8 @@ class EnhancedAreaCard extends EABaseCard {
   _nativeConfig() {
     const cfg = this._config;
     const base = { ...cfg.base };
-    const exclude = [...new Set([...(base.exclude_entities || []), ...(cfg.exclude_entities || []), ...(cfg.power_exclude || [])])];
+    const removed = ["temperature", "humidity", "power", "presence"].flatMap((c) => cfg.sources_excluded?.[c] || []);
+    const exclude = [...new Set([...(base.exclude_entities || []), ...(cfg.exclude_entities || []), ...(cfg.power_exclude || []), ...removed])];
     if (exclude.length) base.exclude_entities = exclude;
     if (cfg.native_power !== false && cfg.show_power !== false) {
       const sc = base.sensor_classes ? [...base.sensor_classes] : ["temperature", "humidity"];
@@ -785,8 +790,8 @@ class EnhancedAreaCard extends EABaseCard {
 
     const sum = summarize(hass, ids, cfg);
     this._summary = sum;
-    const temp = cfg.show_temperature !== false ? avgSensor(hass, ids, "temperature", cfg.temperature_entity || area.temperature_entity_id) : null;
-    const hum = cfg.show_humidity !== false ? avgSensor(hass, ids, "humidity", cfg.humidity_entity || area.humidity_entity_id) : null;
+    const temp = cfg.show_temperature !== false ? avgSensor(hass, ids, "temperature", cfg.temperature_entity || area.temperature_entity_id, cfg.sources_excluded?.temperature) : null;
+    const hum = cfg.show_humidity !== false ? avgSensor(hass, ids, "humidity", cfg.humidity_entity || area.humidity_entity_id, cfg.sources_excluded?.humidity) : null;
     const chips = buildChips(hass, sum, { ...cfg, _areaName: area.name });
     this._chips = chips;
 
@@ -1185,17 +1190,29 @@ function mapViewCards(view, fn) {
   return v;
 }
 
-function cardOptions(opts) {
-  return { ...(opts.card || {}), power_exclude: opts.power_exclude, exclude_entities: opts.exclude_entities };
+function cardOptions(opts, areaId) {
+  const out = { ...(opts.card || {}), power_exclude: opts.power_exclude, exclude_entities: opts.exclude_entities };
+  const ex = opts.sources?.[areaId];
+  if (ex) out.sources_excluded = ex;
+  return out;
+}
+
+/** Per-room source choices made in the integration's Configure dialog (if installed). */
+async function fetchSources(hass) {
+  try {
+    const r = await hass.callWS({ type: "overview_extras/sources" });
+    return r?.excluded || {};
+  } catch (e) {
+    return {}; // integration not installed (plain resource) or older version
+  }
 }
 
 /** Swap every built-in area card for the enhanced wrapper (keeps its config verbatim). */
 function enhanceAreaCards(view, opts) {
-  const extra = cardOptions(opts);
   return mapViewCards(view, (c) => {
     if (c.type !== "area" || !c.area) return c;
     const { grid_options, visibility, ...base } = c;
-    const out = { type: "custom:enhanced-area-card", ...extra, area: c.area, base: { ...base, grid_options } };
+    const out = { type: "custom:enhanced-area-card", ...cardOptions(opts, c.area), area: c.area, base: { ...base, grid_options } };
     if (grid_options) out.grid_options = grid_options;
     if (visibility) out.visibility = visibility;
     return out;
@@ -1213,7 +1230,7 @@ const VIEW_TRANSFORMS = {
         {
           type: "grid",
           column_span: v.max_columns || 3,
-          cards: [{ type: "custom:enhanced-area-card", ...cardOptions(opts), area: config.area, hide_header: true, grid_options: { columns: "full" } }],
+          cards: [{ type: "custom:enhanced-area-card", ...cardOptions(opts, config.area), area: config.area, hide_header: true, grid_options: { columns: "full" } }],
         },
         ...v.sections,
       ];
@@ -1230,7 +1247,9 @@ function patchStrategyClass(name, cls) {
     const opts = config?.[MARKER] ?? globalOptions();
     if (!opts || !view) return view;
     try {
-      return VIEW_TRANSFORMS[name](view, config, hass, opts === true ? {} : opts);
+      const o = { ...(opts === true ? {} : opts) };
+      o.sources ??= await fetchSources(hass);
+      return VIEW_TRANSFORMS[name](view, config, hass, o);
     } catch (e) {
       console.warn("[enhanced-areas] could not enhance", name, e);
       return view; // never break the upstream dashboard
