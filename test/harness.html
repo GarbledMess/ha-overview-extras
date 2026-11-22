@@ -7,15 +7,17 @@
 <style>
   :root {
     --primary-text-color: #1c1c1c; --secondary-text-color: #6b6b6b; --rgb-primary-text-color: 28,28,28;
-    --card-background-color: #fff; --divider-color: #e3e3e3; --primary-color: #03a9f4;
-    font-family: Roboto, system-ui, sans-serif;
+    --card-background-color: #fff; --divider-color: #e0e0e0; --primary-color: #03a9f4;
+    --state-icon-color: #44739e; --error-color: #db4437;
+    font-family: Roboto, "Noto Sans", system-ui, sans-serif;
   }
-  body { margin: 0; padding: 16px; background: #f2f2f2; }
-  body.dark { --primary-text-color: #e6e6e6; --secondary-text-color: #9b9b9b; --rgb-primary-text-color: 230,230,230; --card-background-color: #1e1e1e; --divider-color: #333; background: #111; }
+  body { margin: 0; padding: 16px; background: #fafafa; }
+  body.dark { --primary-text-color: #e6e6e6; --secondary-text-color: #9b9b9b; --rgb-primary-text-color: 230,230,230; --card-background-color: #1e1e1e; --divider-color: #333; --state-icon-color: #9ab8d8; background: #111; }
   h2 { font-size: 15px; color: var(--secondary-text-color); margin: 18px 0 8px; font-weight: 500; }
   .grid { display: grid; grid-template-columns: repeat(var(--cols, 12), 1fr); grid-auto-rows: minmax(56px, auto); gap: 8px; max-width: 1200px; }
   .grid > * { min-width: 0; }
 </style>
+<script src="mdi-subset.js"></script>
 <script>
   /* ---- Minimal stand-ins for HA's own elements ---- */
   customElements.define("ha-card", class extends HTMLElement {
@@ -23,16 +25,15 @@
       `<style>:host{display:block;background:var(--ha-card-background,var(--card-background-color));border-radius:12px;
         border:var(--ha-card-border-width,1px) solid var(--ha-card-border-color,var(--divider-color));box-shadow:var(--ha-card-box-shadow,none);box-sizing:border-box}</style><slot></slot>`; }
   });
-  const ICONS = { "mdi:lightbulb-on": "💡", "mdi:lightbulb-outline": "💡", "mdi:account": "👤", "mdi:account-outline": "👤", "mdi:flash": "⚡",
-    "mdi:door-open": "🚪", "mdi:play-circle": "▶", "mdi:fire": "🔥", "mdi:snowflake": "❄", "mdi:alert": "⚠", "mdi:lock-open-variant": "🔓",
-    "mdi:thermometer": "🌡", "mdi:water-percent": "💧", "mdi:chevron-right": "›", "mdi:sofa": "🛋", "mdi:bed": "🛏", "mdi:silverware-fork-knife": "🍴",
-    "mdi:shower": "🚿", "mdi:desk": "🖥", "mdi:garage": "🚗", "mdi:battery-alert-variant-outline": "🪫", "mdi:account-multiple": "👥",
-    "mdi:fan": "🌀", "mdi:window-shutter-open": "▤", "mdi:home-lightning-bolt": "⚡", "mdi:texture-box": "▦", "mdi:motion-sensor": "🏃", "mdi:water-alert": "💦" };
   customElements.define("ha-icon", class extends HTMLElement {
     static get observedAttributes() { return ["icon"]; }
     attributeChangedCallback() { this.render(); }
     connectedCallback() { this.render(); }
-    render() { const i = this.getAttribute("icon"); this.textContent = ICONS[i] || "◻"; this.style.cssText = "display:inline-flex;width:var(--mdc-icon-size,24px);height:var(--mdc-icon-size,24px);font-size:calc(var(--mdc-icon-size,24px)*0.8);align-items:center;justify-content:center;line-height:1"; }
+    render() {
+      const d = (window.MDI || {})[this.getAttribute("icon")] || "";
+      this.style.cssText = "display:inline-flex;width:var(--mdc-icon-size,24px);height:var(--mdc-icon-size,24px);vertical-align:middle;flex:none";
+      this.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%" style="fill:currentColor"><path d="${d}"/></svg>`;
+    }
   });
   /* Stand-in for HA's built-in area card (compact/vertical as the Overview uses it). Shows what config it got. */
   customElements.define("hui-area-card", class extends HTMLElement {
@@ -52,8 +53,8 @@
       }
       const alert = (c.alert_classes || ["moisture","motion"]).find(cls => st.some(s => s.entity_id.startsWith("binary_sensor.") && s.attributes.device_class === cls && s.state === "on"));
       this.innerHTML = `<ha-card style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:8px;position:relative;text-align:center">
-        ${alert ? `<span style="position:absolute;left:8px;top:6px;font-size:13px" title="${alert}">${alert === "moisture" ? "💦" : "🏃"}</span>` : ""}
-        <div style="width:36px;height:36px;border-radius:50%;background:rgba(var(--rgb-primary-text-color),.07);display:flex;align-items:center;justify-content:center"><ha-icon icon="${a.icon}"></ha-icon></div>
+        ${alert ? `<span style="position:absolute;left:8px;top:8px;width:24px;height:24px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#ff9800;background:color-mix(in srgb,#ff9800 20%,var(--card-background-color));--mdc-icon-size:16px" title="${alert}"><ha-icon icon="${alert === "moisture" ? "mdi:water-alert" : alert === "motion" ? "mdi:motion-sensor" : "mdi:home-account"}"></ha-icon></span>` : ""}
+        <div style="width:36px;height:36px;border-radius:50%;color:var(--state-icon-color);background:color-mix(in srgb,var(--state-icon-color) 20%,transparent);display:flex;align-items:center;justify-content:center"><ha-icon icon="${a.icon}"></ha-icon></div>
         <div style="font-size:14px;font-weight:500;color:var(--primary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${a.name}</div>
         <div style="font-size:12px;color:var(--secondary-text-color)">${parts.join(" · ")}</div></ha-card>`;
     }

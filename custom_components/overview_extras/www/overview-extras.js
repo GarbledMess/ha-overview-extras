@@ -10,7 +10,7 @@
  * No build step, no dependencies. Load as a dashboard resource (type: module).
  */
 
-const VERSION = "0.3.0";
+const VERSION = "0.3.1";
 
 /* ------------------------------------------------------------------------ */
 /* Constants                                                                 */
@@ -240,154 +240,192 @@ function navigate(path) {
 /* Shared styles                                                             */
 /* ------------------------------------------------------------------------ */
 
-const CHIP_CSS = `
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip {
-    display: inline-flex; align-items: center; gap: 4px;
-    height: 28px; padding: 0 10px 0 8px; border-radius: 14px;
-    font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap;
-    color: var(--primary-text-color);
-    background: rgba(var(--rgb-primary-text-color, 33,33,33), 0.06);
-    border: none; cursor: pointer; font-family: inherit;
-    transition: background 0.2s;
-  }
-  .chip:hover { background: rgba(var(--rgb-primary-text-color, 33,33,33), 0.12); }
-  .chip ha-icon { --mdc-icon-size: 16px; }
-  .chip.light { color: var(--ea-light-color); background: rgba(var(--ea-light-rgb), 0.16); }
-  .chip.presence { color: var(--ea-presence-color); background: rgba(var(--ea-presence-rgb), 0.16); }
-  .chip.power { color: var(--ea-power-color); background: rgba(var(--ea-power-rgb), 0.14); }
-  .chip.warn { color: var(--ea-warn-color); background: rgba(var(--ea-warn-rgb), 0.16); }
-  .chip.alert { color: #fff; background: var(--error-color, #db4437); }
-  .chip.media { color: var(--ea-media-color); background: rgba(var(--ea-media-rgb), 0.14); max-width: 100%; }
-  .chip.media span { overflow: hidden; text-overflow: ellipsis; }
-  .chip.climate { color: var(--ea-climate-color); background: rgba(var(--ea-climate-rgb), 0.14); }
-  .chip.muted { color: var(--secondary-text-color); }
-`;
-
+// Colours come from HA's own state colour tokens (so themes apply), with HA's palette as fallback.
 const VARS_CSS = `
   :host {
-    --ea-light-color: var(--state-light-on-color, #f2a20c);  --ea-light-rgb: 242,162,12;
-    --ea-presence-color: #2e9e5b;                             --ea-presence-rgb: 46,158,91;
-    --ea-power-color: var(--energy-grid-consumption-color, #488fc2); --ea-power-rgb: 72,143,194;
-    --ea-warn-color: var(--warning-color, #e07b00);           --ea-warn-rgb: 224,123,0;
-    --ea-media-color: #8b5cf6;                                --ea-media-rgb: 139,92,246;
-    --ea-climate-color: #ef6c3c;                              --ea-climate-rgb: 239,108,60;
+    --ea-light-color: var(--state-light-active-color, var(--amber-color, #ffc107));
+    --ea-presence-color: var(--state-binary_sensor-occupancy-on-color, var(--state-binary_sensor-active-color, var(--amber-color, #ffc107)));
+    --ea-power-color: var(--energy-grid-consumption-color, var(--blue-color, #2196f3));
+    --ea-opening-color: var(--state-binary_sensor-opening-on-color, var(--state-binary_sensor-active-color, var(--amber-color, #ffc107)));
+    --ea-lock-color: var(--state-lock-unlocked-color, var(--red-color, #f44336));
+    --ea-media-color: var(--state-media_player-active-color, var(--light-blue-color, #03a9f4));
+    --ea-heat-color: var(--state-climate-heat-color, var(--deep-orange-color, #ff6f22));
+    --ea-cool-color: var(--state-climate-cool-color, var(--blue-color, #2196f3));
+    --ea-fan-color: var(--state-fan-active-color, var(--cyan-color, #00bcd4));
+    --ea-cover-color: var(--state-cover-active-color, var(--purple-color, #926bc7));
+    --ea-alert-color: var(--error-color, #db4437);
+    --ea-battery-color: var(--state-sensor-battery-low-color, var(--red-color, #f44336));
+    --ea-neutral-color: var(--state-icon-color, var(--secondary-text-color));
     display: block;
   }
 `;
 
-/** Build the chip list from a summary. Returns [{cls, icon, text, action, title}] */
+// Maps chip/badge kinds to a colour.
+const KIND_CSS = `
+  [data-kind] { --chip-color: var(--ea-neutral-color); }
+  [data-kind="lights"].on { --chip-color: var(--ea-light-color); }
+  [data-kind="presence"].on { --chip-color: var(--ea-presence-color); }
+  [data-kind="power"] { --chip-color: var(--ea-power-color); }
+  [data-kind="openings"] { --chip-color: var(--ea-opening-color); }
+  [data-kind="locks"] { --chip-color: var(--ea-lock-color); }
+  [data-kind="media"] { --chip-color: var(--ea-media-color); }
+  [data-kind="climate"].heat { --chip-color: var(--ea-heat-color); }
+  [data-kind="climate"].cool { --chip-color: var(--ea-cool-color); }
+  [data-kind="fans"] { --chip-color: var(--ea-fan-color); }
+  [data-kind="covers"] { --chip-color: var(--ea-cover-color); }
+  [data-kind="alerts"] { --chip-color: var(--ea-alert-color); }
+  [data-kind="battery"] { --chip-color: var(--ea-battery-color); }
+`;
+
+// Same look as HA's entity badges (Overview header badges).
+const CHIP_CSS = `
+  ${KIND_CSS}
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box;
+    height: 36px; padding: 0 12px 0 8px; border-radius: 18px; max-width: 100%;
+    background: var(--ha-card-background, var(--card-background-color, #fff));
+    border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
+    box-shadow: var(--ha-card-box-shadow, none);
+    color: var(--primary-text-color); font-family: inherit;
+    font-size: var(--ha-font-size-s, 12px); font-weight: var(--ha-font-weight-medium, 500);
+    line-height: 1; letter-spacing: 0.1px; white-space: nowrap; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .chip:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+  .chip ha-icon { --mdc-icon-size: 18px; color: var(--chip-color); flex: none; }
+  .chip span { overflow: hidden; text-overflow: ellipsis; }
+  .chip.off span { color: var(--secondary-text-color); }
+  .chip[data-kind="alerts"] { border-color: var(--ea-alert-color); }
+`;
+
+const OPENING_ICONS = { door: "mdi:door-open", window: "mdi:window-open", garage_door: "mdi:garage-open", opening: "mdi:square-outline" };
+const ALERT_ICONS = { moisture: "mdi:water-alert", smoke: "mdi:smoke-detector-variant-alert", gas: "mdi:alert-decagram", carbon_monoxide: "mdi:molecule-co", safety: "mdi:alert-circle", problem: "mdi:alert-circle", tamper: "mdi:shield-alert" };
+
+/** Build the chip list from a summary. Returns [{kind, state, icon, text, action, title}] */
 function buildChips(hass, sum, cfg, { home = false } = {}) {
   const chips = [];
   const show = (k) => cfg[`show_${k}`] !== false;
+  const one = (list) => (list.length === 1 ? list[0] : null);
+  const names = (list) => list.map((id) => friendly(hass, id)).join(", ");
+  const dc = (id) => hass.states[id]?.attributes?.device_class;
 
   if (show("lights") && sum.lights.total) {
     const on = sum.lights.on.length;
     chips.push({
-      cls: on ? "light" : "muted",
-      icon: on ? "mdi:lightbulb-on" : "mdi:lightbulb-outline",
+      kind: "lights",
+      state: on ? "on" : "off",
+      icon: on ? "mdi:lightbulb" : "mdi:lightbulb-off",
       text: on ? (home ? `${on} on` : sum.lights.total > 1 ? `${on}/${sum.lights.total} on` : "On") : "Off",
       action: { type: "lights" },
-      title: on ? "Lights on — tap to turn off" : "Lights off — tap to turn on",
+      title: on ? `Lights on: ${names(sum.lights.on)}. Tap to turn off.` : "Lights off",
     });
   }
   if (show("presence") && sum.presence.sensors.length && !home) {
+    const occ = sum.presence.occupied;
     chips.push({
-      cls: sum.presence.occupied ? "presence" : "muted",
-      icon: sum.presence.occupied ? "mdi:account" : "mdi:account-outline",
-      text: sum.presence.occupied ? "Occupied" : `Clear${sum.presence.since ? " · " + fmtAgo(sum.presence.since) : ""}`,
-      action: { type: "more-info", entity: sum.presence.sensors.length === 1 ? sum.presence.sensors[0] : null },
-      title: sum.presence.sensors.map((id) => friendly(hass, id)).join(", "),
+      kind: "presence",
+      state: occ ? "on" : "off",
+      icon: occ ? "mdi:home-account" : "mdi:home-outline",
+      text: occ ? "Occupied" : `Clear${sum.presence.since ? " · " + fmtAgo(sum.presence.since) : ""}`,
+      action: { type: "more-info", entity: one(sum.presence.sensors) },
+      title: names(sum.presence.sensors),
     });
   }
   if (show("power") && sum.power.sensors.length) {
     chips.push({
-      cls: "power",
+      kind: "power",
       icon: "mdi:flash",
       text: fmtPower(sum.power.value),
-      action: { type: "more-info", entity: sum.power.sensors.length === 1 ? sum.power.sensors[0] : null },
-      title: `Sum of ${sum.power.sensors.length} power sensor(s)`,
+      action: { type: "more-info", entity: one(sum.power.sensors) },
+      title: `Sum of ${sum.power.sensors.length} power sensor(s): ${names(sum.power.sensors)}`,
     });
   }
   if (show("climate") && !home) {
     for (const id of sum.climate.slice(0, 1)) {
       const a = hass.states[id].attributes;
-      const action = a.hvac_action;
-      const icon = action === "heating" ? "mdi:fire" : action === "cooling" ? "mdi:snowflake" : action === "drying" ? "mdi:water-percent" : "mdi:thermostat";
+      const act = a.hvac_action;
+      const state = act === "heating" || act === "preheating" ? "heat" : act === "cooling" ? "cool" : act === "drying" ? "cool" : "idle";
+      const icon = state === "heat" ? "mdi:fire" : state === "cool" ? (act === "drying" ? "mdi:water-percent" : "mdi:snowflake") : "mdi:thermostat";
       const target = a.temperature ?? (a.target_temp_low != null ? `${a.target_temp_low}–${a.target_temp_high}` : null);
       chips.push({
-        cls: "climate",
+        kind: "climate",
+        state,
         icon,
-        text: target != null ? `→ ${target}°` : hass.states[id].state,
+        text: target != null ? `${target}°` : hass.states[id].state,
         action: { type: "more-info", entity: id },
-        title: `${friendly(hass, id)}: ${action || hass.states[id].state}`,
+        title: `${friendly(hass, id)}: ${act || hass.states[id].state}`,
       });
     }
   }
   if (show("openings") && sum.openings.length) {
     chips.push({
-      cls: "warn",
-      icon: "mdi:door-open",
-      text: home ? `${sum.openings.length} open` : sum.openings.length === 1 ? shortName(hass, sum.openings[0], cfg._areaName) : `${sum.openings.length} open`,
-      action: { type: "more-info", entity: sum.openings.length === 1 ? sum.openings[0] : null },
-      title: sum.openings.map((id) => friendly(hass, id)).join(", "),
+      kind: "openings",
+      icon: OPENING_ICONS[dc(sum.openings[0])] || "mdi:door-open",
+      text: home || sum.openings.length > 1 ? `${sum.openings.length} open` : shortName(hass, sum.openings[0], cfg._areaName),
+      count: sum.openings.length,
+      action: { type: "more-info", entity: one(sum.openings) },
+      title: `Open: ${names(sum.openings)}`,
     });
   }
   if (show("covers") && sum.covers.length) {
     chips.push({
-      cls: "muted",
+      kind: "covers",
       icon: "mdi:window-shutter-open",
       text: `${sum.covers.length} open`,
-      action: { type: "more-info", entity: sum.covers.length === 1 ? sum.covers[0] : null },
-      title: sum.covers.map((id) => friendly(hass, id)).join(", "),
+      count: sum.covers.length,
+      action: { type: "more-info", entity: one(sum.covers) },
+      title: `Open: ${names(sum.covers)}`,
     });
   }
   if (show("locks") && sum.unlocked.length) {
     chips.push({
-      cls: "warn",
+      kind: "locks",
       icon: "mdi:lock-open-variant",
       text: sum.unlocked.length === 1 ? "Unlocked" : `${sum.unlocked.length} unlocked`,
-      action: { type: "more-info", entity: sum.unlocked.length === 1 ? sum.unlocked[0] : null },
-      title: sum.unlocked.map((id) => friendly(hass, id)).join(", "),
+      count: sum.unlocked.length,
+      action: { type: "more-info", entity: one(sum.unlocked) },
+      title: `Unlocked: ${names(sum.unlocked)}`,
     });
   }
   if (show("fans") && sum.fans.length) {
     chips.push({
-      cls: "climate",
+      kind: "fans",
       icon: "mdi:fan",
       text: sum.fans.length === 1 ? "Fan on" : `${sum.fans.length} fans`,
-      action: { type: "more-info", entity: sum.fans.length === 1 ? sum.fans[0] : null },
-      title: sum.fans.map((id) => friendly(hass, id)).join(", "),
+      count: sum.fans.length,
+      action: { type: "more-info", entity: one(sum.fans) },
+      title: names(sum.fans),
     });
   }
   if (show("media") && sum.media.length) {
-    const s = hass.states[sum.media[0]];
-    const a = s.attributes;
-    const title = home ? `${sum.media.length} playing` : a.media_title ? `${a.media_title}${a.media_artist ? " · " + a.media_artist : ""}` : "Playing";
+    const a = hass.states[sum.media[0]].attributes;
     chips.push({
-      cls: "media",
-      icon: "mdi:play-circle",
-      text: title,
+      kind: "media",
+      icon: "mdi:play",
+      text: home ? `${sum.media.length} playing` : a.media_title ? `${a.media_title}${a.media_artist ? " · " + a.media_artist : ""}` : "Playing",
       action: { type: "more-info", entity: sum.media[0] },
-      title: sum.media.map((id) => friendly(hass, id)).join(", "),
+      title: `Playing: ${names(sum.media)}`,
     });
   }
   if (show("alerts") && sum.alerts.length) {
     chips.push({
-      cls: "alert",
-      icon: "mdi:alert",
+      kind: "alerts",
+      icon: ALERT_ICONS[dc(sum.alerts[0])] || "mdi:alert-circle",
       text: sum.alerts.length === 1 ? shortName(hass, sum.alerts[0], cfg._areaName) : `${sum.alerts.length} alerts`,
-      action: { type: "more-info", entity: sum.alerts.length === 1 ? sum.alerts[0] : null },
-      title: sum.alerts.map((id) => friendly(hass, id)).join(", "),
+      count: sum.alerts.length,
+      action: { type: "more-info", entity: one(sum.alerts) },
+      title: names(sum.alerts),
     });
   }
   if (show("battery") && sum.lowBattery.length) {
     chips.push({
-      cls: "warn",
-      icon: "mdi:battery-alert-variant-outline",
-      text: `${sum.lowBattery.length}`,
-      action: { type: "more-info", entity: sum.lowBattery.length === 1 ? sum.lowBattery[0] : null },
-      title: "Low battery: " + sum.lowBattery.map((id) => friendly(hass, id)).join(", "),
+      kind: "battery",
+      icon: "mdi:battery-alert",
+      text: sum.lowBattery.length === 1 ? "Low battery" : `${sum.lowBattery.length} low batteries`,
+      count: sum.lowBattery.length,
+      action: { type: "more-info", entity: one(sum.lowBattery) },
+      title: `Low battery: ${names(sum.lowBattery)}`,
     });
   }
   return chips;
@@ -400,12 +438,12 @@ function shortName(hass, id, areaName) {
   return n.length > 18 ? n.slice(0, 17) + "…" : n;
 }
 
-function chipsHtml(chips) {
+function chipsHtml(chips, cls = "chip", label = (c) => c.text) {
   return chips
-    .map(
-      (c, i) =>
-        `<button class="chip ${c.cls}" data-chip="${i}" title="${esc(c.title)}"><ha-icon icon="${c.icon}"></ha-icon><span>${esc(c.text)}</span></button>`
-    )
+    .map((c, i) => {
+      const text = label(c);
+      return `<button class="${cls} ${c.state || ""}" data-kind="${c.kind}" data-chip="${i}" title="${esc(c.title)}" aria-label="${esc(c.title)}"><ha-icon icon="${c.icon}"></ha-icon>${text ? `<span>${esc(text)}</span>` : ""}</button>`;
+    })
     .join("");
 }
 
@@ -564,33 +602,27 @@ class EnhancedAreaCard extends EABaseCard {
         :host { height: 100%; }
         .wrap { position: relative; height: 100%; }
         .wrap > .inner, .inner > * { height: 100%; display: block; }
-        .wrap.lit {
-          --ha-card-border-color: rgba(var(--ea-light-rgb), 0.75);
-          --ha-card-box-shadow: 0 0 0 1px rgba(var(--ea-light-rgb), 0.55), 0 0 14px rgba(var(--ea-light-rgb), 0.30);
-        }
+        /* Lights on: tint the card border with the light colour, as HA does for active tiles. */
+        .wrap.lit { --ha-card-border-color: var(--ea-light-color); }
+        ${KIND_CSS}
         .badges {
-          position: absolute; top: 6px; right: 6px; z-index: 2;
+          position: absolute; top: 8px; right: 8px; z-index: 2;
           display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
           pointer-events: none;
         }
+        /* Styled like HA's tile/area icons: colour on a 20% tint of the same colour. */
         .badge {
           pointer-events: auto; cursor: pointer; border: none; font-family: inherit;
           display: inline-flex; align-items: center; justify-content: center; gap: 2px;
-          min-width: 22px; height: 22px; padding: 0 5px; box-sizing: border-box; border-radius: 11px;
-          font-size: 11px; font-weight: 600; line-height: 1;
-          color: var(--primary-text-color);
-          background: var(--ha-card-background, var(--card-background-color, #fff));
-          box-shadow: 0 0 0 1px rgba(var(--rgb-primary-text-color, 33,33,33), 0.12);
+          min-width: 24px; height: 24px; padding: 0 4px; box-sizing: border-box; border-radius: 12px;
+          font-size: var(--ha-font-size-xs, 10px); font-weight: var(--ha-font-weight-bold, 600); line-height: 1;
+          color: var(--chip-color);
+          background: color-mix(in srgb, var(--chip-color) 20%, var(--ha-card-background, var(--card-background-color, #fff)));
+          -webkit-tap-highlight-color: transparent;
         }
-        .badge ha-icon { --mdc-icon-size: 14px; }
-        .badge.light { color: #1a1200; background: var(--ea-light-color); box-shadow: none; }
-        .badge.warn { color: #fff; background: var(--ea-warn-color); box-shadow: none; }
-        .badge.media { color: #fff; background: var(--ea-media-color); box-shadow: none; }
-        .badge.climate { color: #fff; background: var(--ea-climate-color); box-shadow: none; }
-        .badge.alert { color: #fff; background: var(--error-color, #db4437); box-shadow: none; }
-        .badge.power { color: #fff; background: var(--ea-power-color); box-shadow: none; }
-        .badge.presence { color: #fff; background: var(--ea-presence-color); box-shadow: none; }
-        .badge.muted { color: var(--secondary-text-color); }
+        .badge span { padding-right: 2px; }
+        .badge:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+        .badge ha-icon { --mdc-icon-size: 16px; }
       </style>
       <div class="wrap"><div class="inner"></div><div class="badges"></div></div>`;
     this.shadowRoot.querySelector(".inner").appendChild(el);
@@ -616,31 +648,20 @@ class EnhancedAreaCard extends EABaseCard {
     // area card (alert_classes / sensor_classes), so the overlay covers what it can't show.
     const want = cfg.badges || ["lights", "alerts", "openings", "locks", "media", "climate"];
     const all = buildChips(hass, sum, { ...cfg, show_presence: false, show_power: cfg.native_power === false && cfg.show_power !== false, _areaName: area?.name }, {});
-    const byKind = {
-      lights: all.find((c) => c.action?.type === "lights" && c.cls === "light"),
-      alerts: all.find((c) => c.cls === "alert"),
-      openings: all.find((c) => c.icon === "mdi:door-open"),
-      locks: all.find((c) => c.icon === "mdi:lock-open-variant"),
-      media: all.find((c) => c.cls === "media"),
-      climate: all.find((c) => c.cls === "climate" && c.icon !== "mdi:fan" && c.icon !== "mdi:thermostat"),
-      fans: all.find((c) => c.icon === "mdi:fan"),
-      covers: all.find((c) => c.icon === "mdi:window-shutter-open"),
-      power: all.find((c) => c.cls === "power"),
-      battery: all.find((c) => c.icon === "mdi:battery-alert-variant-outline"),
-    };
+    const byKind = Object.fromEntries(all.map((c) => [c.kind, c]));
+    // Lights only earn a badge while on; idle climate isn't worth one.
+    if (byKind.lights?.state !== "on") delete byKind.lights;
+    if (byKind.climate?.state === "idle") delete byKind.climate;
     const chips = want.map((k) => byKind[k]).filter(Boolean).slice(0, cfg.max_badges ?? 3);
-    // Badges are compact: icon + a count where it means something.
+    // Badges are compact: icon, plus a count where it means something.
     const label = (c) => {
-      if (c.action?.type === "lights") return sum.lights.on.length > 1 ? String(sum.lights.on.length) : "";
-      if (c.icon === "mdi:door-open") return sum.openings.length > 1 ? String(sum.openings.length) : "";
-      if (c.cls === "power") return c.text;
-      return "";
+      if (c.kind === "lights") return sum.lights.on.length > 1 ? String(sum.lights.on.length) : "";
+      if (c.kind === "power") return c.text;
+      return c.count > 1 ? String(c.count) : "";
     };
     this._chips = chips;
     wrap.classList.toggle("lit", cfg.show_glow !== false && sum.lights.on.length > 0);
-    this.shadowRoot.querySelector(".badges").innerHTML = chips
-      .map((c, i) => `<button class="badge ${c.cls}" data-chip="${i}" title="${esc(c.title)}"><ha-icon icon="${c.icon}"></ha-icon>${label(c) ? `<span>${esc(label(c))}</span>` : ""}</button>`)
-      .join("");
+    this.shadowRoot.querySelector(".badges").innerHTML = chipsHtml(chips, "badge", label);
   }
 
   _ids() {
@@ -699,10 +720,7 @@ class EnhancedAreaCard extends EABaseCard {
     if (cfg.hide_header) {
       // "Strip" mode: just the chips, used at the top of area pages.
       this.shadowRoot.innerHTML = `
-        <style>${VARS_CSS}${CHIP_CSS}
-          .chip { height: 32px; font-size: 14px; border-radius: 16px; padding: 0 12px 0 9px; }
-          .chip ha-icon { --mdc-icon-size: 18px; }
-        </style>
+        <style>${VARS_CSS}${CHIP_CSS}</style>
         <div class="chips">${chipsHtml(chips)}</div>`;
       return;
     }
@@ -717,46 +735,45 @@ class EnhancedAreaCard extends EABaseCard {
         ${CHIP_CSS}
         ha-card {
           position: relative; overflow: hidden; height: 100%; box-sizing: border-box;
-          padding: 14px; display: flex; flex-direction: column; gap: 12px;
+          padding: 12px; display: flex; flex-direction: column; gap: 10px;
           cursor: ${cfg.navigation_path ? "pointer" : "default"};
           transition: box-shadow 0.3s, border-color 0.3s;
         }
-        ha-card.lit { border-color: rgba(var(--ea-light-rgb), 0.55); }
+        ha-card.lit { border-color: var(--ea-light-color); }
         .bg {
           position: absolute; inset: 0; background-size: cover; background-position: center;
           opacity: 0.22; pointer-events: none;
         }
-        .glow {
-          position: absolute; inset: 0; pointer-events: none;
-          background: radial-gradient(120% 90% at 0% 0%, rgba(var(--ea-light-rgb), 0.20), transparent 60%);
-        }
         .top { position: relative; display: flex; align-items: center; gap: 12px; min-width: 0; }
         .icon {
-          position: relative; flex: none; width: 42px; height: 42px; border-radius: 50%;
+          position: relative; flex: none; width: 36px; height: 36px; border-radius: 50%;
           display: flex; align-items: center; justify-content: center;
-          background: rgba(var(--rgb-primary-text-color, 33,33,33), 0.06);
-          color: var(--secondary-text-color);
+          --tile-color: var(--ea-neutral-color);
+          color: var(--tile-color);
+          background: color-mix(in srgb, var(--tile-color) 20%, transparent);
         }
-        .lit .icon { background: rgba(var(--ea-light-rgb), 0.2); color: var(--ea-light-color); }
+        .lit .icon { --tile-color: var(--ea-light-color); }
+        .icon ha-icon { --mdc-icon-size: 24px; }
         .dot {
-          position: absolute; right: -1px; top: -1px; width: 12px; height: 12px; border-radius: 50%;
-          background: var(--ea-presence-color); border: 2px solid var(--ha-card-background, var(--card-background-color, #fff));
-          animation: pulse 2.4s ease-in-out infinite;
+          position: absolute; right: -2px; top: -2px; width: 10px; height: 10px; border-radius: 50%;
+          background: var(--ea-presence-color);
+          border: 2px solid var(--ha-card-background, var(--card-background-color, #fff));
         }
-        @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(var(--ea-presence-rgb),0.5); } 50% { box-shadow: 0 0 0 5px rgba(var(--ea-presence-rgb),0); } }
-        @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
         .name { flex: 1; min-width: 0; }
-        .title { font-size: 16px; font-weight: 500; color: var(--primary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .meta { display: flex; gap: 10px; font-size: 13px; color: var(--secondary-text-color); margin-top: 2px; }
+        .title { font-size: var(--ha-font-size-m, 14px); font-weight: var(--ha-font-weight-medium, 500); letter-spacing: 0.1px; line-height: 20px; color: var(--primary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .meta { display: flex; gap: 8px; font-size: var(--ha-font-size-s, 12px); line-height: 16px; letter-spacing: 0.4px; color: var(--primary-text-color); }
         .meta span { display: inline-flex; align-items: center; gap: 2px; }
-        .meta ha-icon { --mdc-icon-size: 14px; }
+        .meta ha-icon { --mdc-icon-size: 14px; color: var(--secondary-text-color); }
+        /* Chips inside the card: smaller, tinted, borderless (like tile card features). */
+        ha-card .chip { height: 28px; border-radius: 14px; padding: 0 10px 0 6px; border: none; box-shadow: none;
+          background: color-mix(in srgb, var(--chip-color) 12%, transparent); }
+        ha-card .chip ha-icon { --mdc-icon-size: 16px; }
         .arrow { color: var(--secondary-text-color); --mdc-icon-size: 20px; opacity: 0.6; }
         .chips { position: relative; }
         .chips:empty { display: none; }
       </style>
       <ha-card class="${lit ? "lit" : ""} ${occupied ? "occupied" : ""}">
         ${picture ? `<div class="bg" style="background-image:url('${esc(area.picture)}')"></div>` : ""}
-        ${lit ? `<div class="glow"></div>` : ""}
         <div class="top">
           <div class="icon">
             <ha-icon icon="${esc(area.icon || cfg.icon || "mdi:texture-box")}"></ha-icon>
@@ -825,15 +842,16 @@ class EnhancedHomeSummaryCard extends EABaseCard {
     if (cfg.power_entity && hass.states[cfg.power_entity]) {
       const s = hass.states[cfg.power_entity];
       const f = POWER_FACTORS[s.attributes.unit_of_measurement] ?? 1;
-      const i = chips.findIndex((c) => c.cls === "power");
-      const chip = { cls: "power", icon: "mdi:home-lightning-bolt", text: fmtPower((num(s.state) ?? 0) * f), action: { type: "more-info", entity: cfg.power_entity }, title: friendly(hass, cfg.power_entity) };
+      const i = chips.findIndex((c) => c.kind === "power");
+      const chip = { kind: "power", icon: "mdi:home-lightning-bolt", text: fmtPower((num(s.state) ?? 0) * f), action: { type: "more-info", entity: cfg.power_entity }, title: friendly(hass, cfg.power_entity) };
       if (i >= 0) chips[i] = chip;
       else chips.splice(1, 0, chip);
     }
     if (cfg.show_presence !== false && occupiedRooms.length) {
       chips.splice(1, 0, {
-        cls: "presence",
-        icon: "mdi:account-multiple",
+        kind: "presence",
+        state: "on",
+        icon: "mdi:home-account",
         text: occupiedRooms.length === 1 ? occupiedRooms[0] : `${occupiedRooms.length} rooms`,
         action: {},
         title: "Occupied: " + occupiedRooms.join(", "),
@@ -846,8 +864,6 @@ class EnhancedHomeSummaryCard extends EABaseCard {
         ${VARS_CSS}
         ${CHIP_CSS}
         .wrap { display: flex; align-items: center; min-height: 40px; }
-        .chip { height: 34px; border-radius: 17px; font-size: 14px; padding: 0 14px 0 10px; }
-        .chip ha-icon { --mdc-icon-size: 18px; }
         .empty { color: var(--secondary-text-color); font-size: 14px; }
       </style>
       <div class="wrap">
