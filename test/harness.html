@@ -1,0 +1,221 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enhanced Areas test harness</title>
+<style>
+  :root {
+    --primary-text-color: #1c1c1c; --secondary-text-color: #6b6b6b; --rgb-primary-text-color: 28,28,28;
+    --card-background-color: #fff; --divider-color: #e3e3e3; --primary-color: #03a9f4;
+    font-family: Roboto, system-ui, sans-serif;
+  }
+  body { margin: 0; padding: 16px; background: #f2f2f2; }
+  body.dark { --primary-text-color: #e6e6e6; --secondary-text-color: #9b9b9b; --rgb-primary-text-color: 230,230,230; --card-background-color: #1e1e1e; --divider-color: #333; background: #111; }
+  h2 { font-size: 15px; color: var(--secondary-text-color); margin: 18px 0 8px; font-weight: 500; }
+  .grid { display: grid; grid-template-columns: repeat(var(--cols, 12), 1fr); grid-auto-rows: minmax(56px, auto); gap: 8px; max-width: 1200px; }
+  .grid > * { min-width: 0; }
+</style>
+<script>
+  /* ---- Minimal stand-ins for HA's own elements ---- */
+  customElements.define("ha-card", class extends HTMLElement {
+    constructor() { super(); this.attachShadow({ mode: "open" }).innerHTML =
+      `<style>:host{display:block;background:var(--ha-card-background,var(--card-background-color));border-radius:12px;
+        border:var(--ha-card-border-width,1px) solid var(--ha-card-border-color,var(--divider-color));box-shadow:var(--ha-card-box-shadow,none);box-sizing:border-box}</style><slot></slot>`; }
+  });
+  const ICONS = { "mdi:lightbulb-on": "💡", "mdi:lightbulb-outline": "💡", "mdi:account": "👤", "mdi:account-outline": "👤", "mdi:flash": "⚡",
+    "mdi:door-open": "🚪", "mdi:play-circle": "▶", "mdi:fire": "🔥", "mdi:snowflake": "❄", "mdi:alert": "⚠", "mdi:lock-open-variant": "🔓",
+    "mdi:thermometer": "🌡", "mdi:water-percent": "💧", "mdi:chevron-right": "›", "mdi:sofa": "🛋", "mdi:bed": "🛏", "mdi:silverware-fork-knife": "🍴",
+    "mdi:shower": "🚿", "mdi:desk": "🖥", "mdi:garage": "🚗", "mdi:battery-alert-variant-outline": "🪫", "mdi:account-multiple": "👥",
+    "mdi:fan": "🌀", "mdi:window-shutter-open": "▤", "mdi:home-lightning-bolt": "⚡", "mdi:texture-box": "▦", "mdi:motion-sensor": "🏃", "mdi:water-alert": "💦" };
+  customElements.define("ha-icon", class extends HTMLElement {
+    static get observedAttributes() { return ["icon"]; }
+    attributeChangedCallback() { this.render(); }
+    connectedCallback() { this.render(); }
+    render() { const i = this.getAttribute("icon"); this.textContent = ICONS[i] || "◻"; this.style.cssText = "display:inline-flex;width:var(--mdc-icon-size,24px);height:var(--mdc-icon-size,24px);font-size:calc(var(--mdc-icon-size,24px)*0.8);align-items:center;justify-content:center;line-height:1"; }
+  });
+  /* Stand-in for HA's built-in area card (compact/vertical as the Overview uses it). Shows what config it got. */
+  customElements.define("hui-area-card", class extends HTMLElement {
+    setConfig(c) { this._c = c; this.render(); }
+    set hass(h) { this._h = h; this.render(); }
+    render() {
+      if (!this._c || !this._h) return;
+      const h = this._h, c = this._c, a = h.areas[c.area];
+      const ents = Object.values(h.entities).filter(e => (e.area_id || h.devices[e.device_id]?.area_id) === c.area && !(c.exclude_entities||[]).includes(e.entity_id));
+      const st = ents.map(e => h.states[e.entity_id]).filter(Boolean);
+      const parts = [];
+      for (const cls of c.sensor_classes || ["temperature","humidity"]) {
+        const v = st.filter(s => s.entity_id.startsWith("sensor.") && s.attributes.device_class === cls).map(s => +s.state);
+        if (!v.length) continue;
+        if (cls === "power") parts.push(Math.round(v.reduce((a,b)=>a+b,0)) + " W");
+        else parts.push(v.sort()[Math.floor(v.length/2)] + (cls === "temperature" ? " °C" : " %"));
+      }
+      const alert = (c.alert_classes || ["moisture","motion"]).find(cls => st.some(s => s.entity_id.startsWith("binary_sensor.") && s.attributes.device_class === cls && s.state === "on"));
+      this.innerHTML = `<ha-card style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:8px;position:relative;text-align:center">
+        ${alert ? `<span style="position:absolute;left:8px;top:6px;font-size:13px" title="${alert}">${alert === "moisture" ? "💦" : "🏃"}</span>` : ""}
+        <div style="width:36px;height:36px;border-radius:50%;background:rgba(var(--rgb-primary-text-color),.07);display:flex;align-items:center;justify-content:center"><ha-icon icon="${a.icon}"></ha-icon></div>
+        <div style="font-size:14px;font-weight:500;color:var(--primary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${a.name}</div>
+        <div style="font-size:12px;color:var(--secondary-text-color)">${parts.join(" · ")}</div></ha-card>`;
+    }
+    getCardSize() { return 2; }
+  });
+  window.loadCardHelpers = async () => ({
+    createCardElement: async (cfg) => {
+      const tag = cfg.type.startsWith("custom:") ? cfg.type.slice(7) : `hui-${cfg.type}-card`;
+      const el = document.createElement(tag); el.setConfig(cfg); return el;
+    },
+  });
+
+  /* ---- Mock registries + states ---- */
+  const now = Date.now();
+  const iso = (minsAgo) => new Date(now - minsAgo * 60000).toISOString();
+  const S = {};
+  const E = {};
+  const D = {};
+  function ent(id, area, state, attrs = {}, minsAgo = 3, extra = {}) {
+    S[id] = { entity_id: id, state: String(state), attributes: { friendly_name: attrs.name || id, ...attrs }, last_changed: iso(minsAgo) };
+    E[id] = { entity_id: id, area_id: area, ...extra };
+  }
+  // Living room: lights on, occupied, TV playing, 3 power sensors
+  ent("light.living_ceiling", "living_room", "on", { name: "Living Room Ceiling" });
+  ent("light.living_lamp", "living_room", "on", { name: "Living Room Lamp" });
+  ent("light.living_strip", "living_room", "off", { name: "Living Room Strip" });
+  ent("binary_sensor.living_presence", "living_room", "on", { device_class: "occupancy", name: "Living Room Presence" });
+  ent("sensor.living_temp", "living_room", "21.4", { device_class: "temperature", unit_of_measurement: "°C" });
+  ent("sensor.living_hum", "living_room", "44", { device_class: "humidity", unit_of_measurement: "%" });
+  ent("sensor.tv_power", "living_room", "112.6", { device_class: "power", unit_of_measurement: "W" });
+  ent("sensor.lamp_power", "living_room", "8.2", { device_class: "power", unit_of_measurement: "W" });
+  ent("sensor.console_power", "living_room", "0.065", { device_class: "power", unit_of_measurement: "kW" });
+  ent("media_player.living_tv", "living_room", "playing", { name: "Living Room TV", media_title: "Planet Earth III", media_artist: "BBC" });
+  // Kitchen: window open, clear 12m ago, lights off
+  ent("light.kitchen", "kitchen", "off", { name: "Kitchen Lights" });
+  ent("light.kitchen_under", "kitchen", "off", { name: "Kitchen Under Cabinet" });
+  ent("binary_sensor.kitchen_motion", "kitchen", "off", { device_class: "motion", name: "Kitchen Motion" }, 12);
+  ent("binary_sensor.kitchen_window", "kitchen", "on", { device_class: "window", name: "Kitchen Window" });
+  ent("sensor.kitchen_temp", "kitchen", "19.8", { device_class: "temperature", unit_of_measurement: "°C" });
+  ent("sensor.fridge_power", "kitchen", "86", { device_class: "power", unit_of_measurement: "W" });
+  ent("sensor.dishwasher_power", "kitchen", "1820", { device_class: "power", unit_of_measurement: "W" });
+  // Bedroom: heating, clear 2h, one lamp on
+  ent("light.bedside", "bedroom", "on", { name: "Bedside Lamp" });
+  ent("climate.bedroom", "bedroom", "heat", { name: "Bedroom Thermostat", hvac_action: "heating", temperature: 20, current_temperature: 18.6 });
+  ent("binary_sensor.bedroom_presence", "bedroom", "off", { device_class: "presence", name: "Bedroom Presence" }, 130);
+  ent("sensor.bedroom_hum", "bedroom", "51", { device_class: "humidity", unit_of_measurement: "%" });
+  // Bathroom: leak!
+  ent("light.bathroom", "bathroom", "off", { name: "Bathroom Light" });
+  ent("binary_sensor.bathroom_leak", "bathroom", "on", { device_class: "moisture", name: "Bathroom Leak" });
+  ent("sensor.bathroom_temp", "bathroom", "22.9", { device_class: "temperature", unit_of_measurement: "°C" });
+  ent("sensor.bathroom_sensor_battery", "bathroom", "9", { device_class: "battery", unit_of_measurement: "%" });
+  // Office: device-assigned entities (area via device), occupied, lights on, power
+  D["dev_desk"] = { id: "dev_desk", area_id: "office" };
+  ent("light.desk", null, "on", { name: "Office Desk Lamp" }, 3, { device_id: "dev_desk" });
+  ent("sensor.desk_power", null, "143", { device_class: "power", unit_of_measurement: "W" }, 3, { device_id: "dev_desk" });
+  ent("binary_sensor.office_mmwave", "office", "on", { device_class: "occupancy", name: "Office mmWave" });
+  ent("sensor.office_temp", "office", "22.1", { device_class: "temperature", unit_of_measurement: "°C" });
+  ent("sensor.office_diag", "office", "5", { device_class: "power", unit_of_measurement: "W" }, 3, { entity_category: "diagnostic" });
+  // Garage: door open + unlocked
+  ent("binary_sensor.garage_door", "garage", "on", { device_class: "garage_door", name: "Garage Door" });
+  ent("lock.garage_side", "garage", "unlocked", { name: "Garage Side Door" });
+  ent("light.garage", "garage", "off", { name: "Garage Light" });
+  // Unassigned + people + weather
+  ent("person.jack", null, "home", { name: "Jack" });
+  ent("weather.home", null, "sunny", { name: "Home", temperature: 12 });
+  ent("switch.christmas_lights", null, "off", { name: "Christmas Lights" });
+
+  window.mockHass = {
+    states: S, entities: E, devices: D,
+    areas: {
+      living_room: { area_id: "living_room", name: "Living Room", icon: "mdi:sofa", floor_id: "ground", temperature_entity_id: "sensor.living_temp" },
+      kitchen: { area_id: "kitchen", name: "Kitchen", icon: "mdi:silverware-fork-knife", floor_id: "ground", temperature_entity_id: "sensor.kitchen_temp" },
+      garage: { area_id: "garage", name: "Garage", icon: "mdi:garage", floor_id: "ground" },
+      bedroom: { area_id: "bedroom", name: "Bedroom", icon: "mdi:bed", floor_id: "first" },
+      bathroom: { area_id: "bathroom", name: "Bathroom", icon: "mdi:shower", floor_id: "first", temperature_entity_id: "sensor.bathroom_temp" },
+      office: { area_id: "office", name: "Office", icon: "mdi:desk", floor_id: "first" },
+    },
+    floors: { ground: { floor_id: "ground", name: "Ground floor", level: 0 }, first: { floor_id: "first", name: "First floor", level: 1 } },
+    config: { unit_system: { temperature: "°C" }, state: "RUNNING" },
+    themes: { darkMode: false },
+    calls: [],
+    callService(d, s, data, target) { this.calls.push({ d, s, data, target }); return Promise.resolve(); },
+    callWS: async (msg) => (msg.type === "frontend/get_system_data" ? { value: { favorite_entities: [] } } : null),
+    localize: () => "",
+  };
+</script>
+<script type="module">
+  const MODE = new URLSearchParams(location.search).get("mode") || "injected";
+  await import(MODE === "global" ? "../custom_components/overview_extras/www/overview-extras.js?enhance_overview=1&power_exclude=sensor.console_power" : "../custom_components/overview_extras/www/overview-extras.js");
+  const hass = window.mockHass;
+
+  /* Mimic HA's built-in strategies, defined AFTER our module (as HA lazy-loads them). */
+  const areaCardUpstream = (id) => {
+    const sc = []; if (hass.areas[id].temperature_entity_id) sc.push("temperature");
+    return { type: "area", area: id, display_type: "compact", sensor_classes: sc, tap_action: { action: "navigate", navigation_path: `areas-${id}` }, vertical: true, grid_options: { rows: 2, columns: 4 } };
+  };
+  class HomeOverview extends HTMLElement {
+    static async generate(config, hass) {
+      const sections = Object.values(hass.floors).map((f) => ({ type: "grid", column_span: 3, cards: [
+        { type: "heading", heading: f.name },
+        ...Object.values(hass.areas).filter((a) => a.floor_id === f.floor_id).map((a) => areaCardUpstream(a.area_id)),
+      ]}));
+      return { type: "sections", max_columns: 3, sections };
+    }
+  }
+  class HomeArea extends HTMLElement {
+    static async generate(config) { return { type: "sections", max_columns: 2, sections: [{ type: "grid", cards: [{ type: "heading", heading: "Lights" }] }] }; }
+  }
+  class HomeDashboard extends HTMLElement {
+    static async generate(config, hass) {
+      return { views: [{ icon: "mdi:home", path: "overview", strategy: { type: "home-overview", favorite_entities: config.favorite_entities } },
+        ...Object.values(hass.areas).map((a) => ({ title: a.name, path: `areas-${a.area_id}`, subview: true, strategy: { type: "home-area", area: a.area_id } }))] };
+    }
+  }
+  customElements.define("home-overview-view-strategy", HomeOverview);
+  customElements.define("home-area-view-strategy", HomeArea);
+  customElements.define("home-dashboard-strategy", HomeDashboard);
+
+  /* Run the pipeline the way HA does: dashboard strategy -> view strategies. */
+  // "global" mode = the real built-in Overview, untouched, with our module loaded via extra_module_url.
+  const Dash = MODE === "global" ? customElements.get("home-dashboard-strategy") : customElements.get("ll-strategy-dashboard-overview-extras");
+  const dash = await Dash.generate(MODE === "global" ? { type: "home" } : { type: "custom:overview-extras" }, hass);
+  const views = [];
+  for (const v of dash.views) {
+    const { type, ...rest } = v.strategy;
+    views.push({ ...v, ...(await customElements.get(`${type}-view-strategy`).generate(rest, hass)) });
+  }
+  const standalone = await customElements.get("ll-strategy-dashboard-enhanced-areas").generate({}, hass);
+  window.result = { dash, views, standalone };
+
+  async function renderCard(cfg, parent, cols) {
+    if (cfg.type === "heading") {
+      const h = document.createElement("h2"); h.textContent = cfg.heading; h.style.gridColumn = `span ${cols}`; parent.appendChild(h); return;
+    }
+    if (!cfg.type.startsWith("custom:")) return;
+    const el = document.createElement(cfg.type.slice(7));
+    el.setConfig(cfg); el.hass = hass;
+    const go = cfg.grid_options || el.getGridOptions?.() || {};
+    const c = go.columns === "full" ? cols : go.columns || 6;
+    el.style.gridColumn = `span ${Math.min(c, cols)}`;
+    if (typeof go.rows === "number") el.style.height = `${go.rows * 56 + (go.rows - 1) * 8}px`;
+    parent.appendChild(el);
+  }
+  async function renderSections(sections, title, cols) {
+    const t = document.createElement("h1"); t.textContent = title; t.style.cssText = "font-size:18px;color:var(--primary-text-color)"; document.getElementById("out").appendChild(t);
+    const grid = document.createElement("div"); grid.className = "grid"; grid.style.setProperty("--cols", cols);
+    document.getElementById("out").appendChild(grid);
+    for (const s of sections) for (const c of s.cards) await renderCard(c, grid, cols);
+  }
+  const mode = new URLSearchParams(location.search).get("mode") || "injected";
+  const cols = +(new URLSearchParams(location.search).get("cols") || 36);
+  if (new URLSearchParams(location.search).has("dark")) document.body.classList.add("dark");
+  if (mode === "global") {
+    await renderSections(views[0].sections, "Built-in Overview + extra_module_url", cols);
+    await renderSections(views.find((v) => v.path === "areas-living_room").sections, "Built-in Living Room page", 12);
+  }
+  if (mode === "injected") await renderSections(views[0].sections, "Overview Extras dashboard", cols);
+  if (mode === "area") await renderSections(views.find((v) => v.path === "areas-living_room").sections, "Living Room page (injected strip)", 12);
+  if (mode === "standalone") await renderSections(standalone.views[0].sections, "Enhanced Areas (standalone)", cols);
+  await new Promise((r) => setTimeout(r, 300));
+  window.done = true;
+</script>
+</head>
+<body><div id="out"></div></body>
+</html>

@@ -1,0 +1,51 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Overview Extras",
+        "description": "Adds lights-on glow and badges, presence, room power, open doors and windows, media and alerts to the built-in Overview's room cards. After adding, refresh your browser and the mobile app. Use Configure to change settings."
+      }
+    },
+    "abort": {
+      "already_configured": "Overview Extras is already set up.",
+      "single_instance_allowed": "Overview Extras is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Overview Extras settings",
+        "description": "Changes apply after you refresh the browser or app.",
+        "data": {
+          "show_glow": "Glow room cards when lights are on",
+          "show_power": "Show total room power",
+          "show_presence": "Use occupancy and presence sensors for the presence icon",
+          "area_strip": "Status strip at the top of room pages",
+          "badges": "Badges on room cards (in priority order)",
+          "max_badges": "Maximum badges per room card",
+          "power_exclude": "Power sensors to leave out of room totals",
+          "exclude_entities": "Entities to ignore completely"
+        },
+        "data_description": {
+          "power_exclude": "Use this to stop double counting, for example a circuit meter plus the plugs on that circuit.",
+          "max_badges": "Room cards are small; extra badges are dropped."
+        }
+      }
+    }
+  },
+  "selector": {
+    "badges": {
+      "options": {
+        "lights": "Lights on",
+        "alerts": "Leak, smoke and other alerts",
+        "openings": "Open doors and windows",
+        "locks": "Unlocked locks",
+        "media": "Media playing",
+        "climate": "Heating or cooling",
+        "fans": "Fans on",
+        "covers": "Open covers and blinds",
+        "battery": "Low batteries"
+      }
+    }
+  }
+}
