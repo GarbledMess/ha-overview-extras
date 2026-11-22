@@ -10,7 +10,7 @@
  * No build step, no dependencies. Load as a dashboard resource (type: module).
  */
 
-const VERSION = "0.3.1";
+const VERSION = "0.3.2";
 
 /* ------------------------------------------------------------------------ */
 /* Constants                                                                 */
@@ -461,6 +461,105 @@ function signature(hass, ids) {
   return sig;
 }
 
+
+/* ------------------------------------------------------------------------ */
+/* Creating the built-in area card                                          */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Build HA's own area card. `hui-card` is HA's generic card host (used by every sections
+ * view, so it's defined on the built-in Overview); it lazy-loads the real card itself.
+ * `window.loadCardHelpers` only exists once a regular dashboard has been opened.
+ */
+async function createNativeCard(config) {
+  const viaHuiCard = () => {
+    const el = document.createElement("hui-card");
+    el.config = config;
+    return el;
+  };
+  if (customElements.get("hui-card")) return viaHuiCard();
+  try {
+    if (window.loadCardHelpers) {
+      const helpers = await window.loadCardHelpers();
+      const el = await helpers.createCardElement(config);
+      if (el) return el;
+    }
+  } catch (e) {
+    /* fall through */
+  }
+  const defined = await Promise.race([
+    customElements.whenDefined("hui-card").then(() => true),
+    new Promise((r) => setTimeout(() => r(false), 4000)),
+  ]);
+  if (defined) return viaHuiCard();
+  // Last resort: our own look-alike of the compact area card, so the layout still fits.
+  const el = document.createElement("enhanced-compact-area");
+  el.setConfig(config);
+  return el;
+}
+
+/** Look-alike of HA's compact vertical area card. Only used if HA's own can't be created. */
+class EnhancedCompactArea extends HTMLElement {
+  setConfig(config) {
+    this._config = config;
+    this._render();
+  }
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+  _render() {
+    const hass = this._hass;
+    const cfg = this._config;
+    if (!hass || !cfg) return;
+    if (!this.shadowRoot) {
+      this.attachShadow({ mode: "open" });
+      this.shadowRoot.addEventListener("click", () => {
+        if (cfg.tap_action?.action === "navigate") navigate(cfg.tap_action.navigation_path);
+      });
+    }
+    const area = hass.areas?.[cfg.area];
+    if (!area) return;
+    const ids = entitiesForArea(hass, cfg.area, cfg.exclude_entities || []);
+    const sig = signature(hass, ids) + area.name + area.icon;
+    if (sig === this._sig) return;
+    this._sig = sig;
+    const sum = summarize(hass, ids, { power_exclude: cfg.exclude_entities });
+    const parts = [];
+    const temp = avgSensor(hass, ids, "temperature", area.temperature_entity_id);
+    if (temp && (cfg.sensor_classes || []).includes("temperature")) parts.push(`${fmtNum(temp.value)} ${temp.unit}`);
+    if ((cfg.sensor_classes || []).includes("power") && sum.power.sensors.length) parts.push(fmtPower(sum.power.value));
+    const alertCls = (cfg.alert_classes || ["moisture", "motion"]).find((c) =>
+      ids.some((id) => domainOf(id) === "binary_sensor" && hass.states[id]?.state === "on" && hass.states[id].attributes.device_class === c)
+    );
+    const alertIcon = { moisture: "mdi:water-alert", motion: "mdi:motion-sensor", occupancy: "mdi:home-account", presence: "mdi:home-account" }[alertCls] || "mdi:alert-circle";
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${VARS_CSS}
+        :host { height: 100%; }
+        ha-card { height: 100%; box-sizing: border-box; padding: 8px; cursor: pointer; position: relative;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; overflow: hidden; }
+        .icon { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+          color: var(--ea-neutral-color); background: color-mix(in srgb, var(--ea-neutral-color) 20%, transparent); }
+        .name { font-size: var(--ha-font-size-m, 14px); font-weight: var(--ha-font-weight-medium, 500); color: var(--primary-text-color);
+          max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sensors { font-size: var(--ha-font-size-s, 12px); color: var(--secondary-text-color); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .alert { position: absolute; top: 8px; left: 8px; width: 24px; height: 24px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+          --c: var(--ea-presence-color); color: var(--c); background: color-mix(in srgb, var(--c) 20%, var(--ha-card-background, var(--card-background-color, #fff))); }
+        .alert ha-icon { --mdc-icon-size: 16px; }
+      </style>
+      <ha-card>
+        ${alertCls ? `<div class="alert"><ha-icon icon="${alertIcon}"></ha-icon></div>` : ""}
+        <div class="icon"><ha-icon icon="${esc(area.icon || "mdi:texture-box")}"></ha-icon></div>
+        <div class="name">${esc(area.name)}</div>
+        ${parts.length ? `<div class="sensors">${esc(parts.join(" · "))}</div>` : ""}
+      </ha-card>`;
+  }
+  getCardSize() {
+    return 2;
+  }
+}
+
 /* ------------------------------------------------------------------------ */
 /* Base card                                                                 */
 /* ------------------------------------------------------------------------ */
@@ -573,34 +672,15 @@ class EnhancedAreaCard extends EABaseCard {
     const key = JSON.stringify(nativeCfg);
     if (key === this._innerKey) return;
     this._innerKey = key;
-    let el;
-    try {
-      const helpers = await window.loadCardHelpers?.();
-      el = helpers ? await helpers.createCardElement(nativeCfg) : null;
-    } catch (e) {
-      el = null;
-    }
-    if (!el) {
-      const Native = customElements.get("hui-area-card");
-      if (Native) {
-        el = new Native();
-        el.setConfig(nativeCfg);
-      }
-    }
-    if (!el) {
-      // Built-in area card unavailable (unexpected upstream change): fall back to our own card.
-      this._wrapped = false;
-      this._sig = null;
-      this._update();
-      return;
-    }
+    const el = await createNativeCard(nativeCfg);
     this._inner = el;
     if (this._hass) el.hass = this._hass;
     this.shadowRoot.innerHTML = `
       <style>
         ${VARS_CSS}
         :host { height: 100%; }
-        .wrap { position: relative; height: 100%; }
+        /* Never grow past the grid cell HA gave us (fixed rows on the Overview). */
+        .wrap { position: relative; height: 100%; overflow: hidden; border-radius: var(--ha-card-border-radius, 12px); }
         .wrap > .inner, .inner > * { height: 100%; display: block; }
         /* Lights on: tint the card border with the light colour, as HA does for active tiles. */
         .wrap.lit { --ha-card-border-color: var(--ea-light-color); }
@@ -1248,6 +1328,7 @@ const define = (name, cls) => {
   if (!customElements.get(name)) customElements.define(name, cls);
 };
 define("enhanced-area-card", EnhancedAreaCard);
+define("enhanced-compact-area", EnhancedCompactArea);
 define("enhanced-home-summary-card", EnhancedHomeSummaryCard);
 define("ll-strategy-dashboard-enhanced-areas", EnhancedAreasStrategy);
 define("ll-strategy-dashboard-overview-extras", EnhancedHomeStrategy);
