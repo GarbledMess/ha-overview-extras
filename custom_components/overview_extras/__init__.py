@@ -23,7 +23,7 @@ from homeassistant.helpers.device_registry import EVENT_DEVICE_REGISTRY_UPDATED
 from homeassistant.helpers.entity_registry import EVENT_ENTITY_REGISTRY_UPDATED
 from homeassistant.helpers.typing import ConfigType
 
-from .sources import candidates_by_area
+from .sources import apply_selection, candidates_by_area
 from .const import (
     CONF_AREA_STRIP,
     CONF_BADGES,
@@ -52,6 +52,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         [StaticPathConfig(URL_BASE, str(Path(__file__).parent / "www"), False)]
     )
     websocket_api.async_register_command(hass, ws_sources)
+    websocket_api.async_register_command(hass, ws_area_sources)
+    websocket_api.async_register_command(hass, ws_set_area_sources)
     return True
 
 
@@ -62,6 +64,46 @@ def ws_sources(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
     entries = hass.config_entries.async_entries(DOMAIN)
     excluded = entries[0].options.get(CONF_SOURCES_EXCLUDED, {}) if entries else {}
     connection.send_result(msg["id"], {"excluded": excluded})
+
+
+@websocket_api.websocket_command({vol.Required("type"): "overview_extras/area_sources", vol.Required("area_id"): str})
+@websocket_api.require_admin
+@callback
+def ws_area_sources(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    """For the room settings dialog: a room's candidate sources and which were removed."""
+    entries = hass.config_entries.async_entries(DOMAIN)
+    if not entries:
+        connection.send_error(msg["id"], "not_set_up", "Overview Extras is not set up")
+        return
+    area_id = msg["area_id"]
+    candidates = candidates_by_area(hass).get(area_id, {})
+    excluded = entries[0].options.get(CONF_SOURCES_EXCLUDED, {}).get(area_id, {})
+    connection.send_result(msg["id"], {"candidates": candidates, "excluded": excluded})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "overview_extras/set_area_sources",
+        vol.Required("area_id"): str,
+        vol.Required("selected"): {str: [str]},
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_set_area_sources(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    """Save a room's sources from the room settings dialog."""
+    entries = hass.config_entries.async_entries(DOMAIN)
+    if not entries:
+        connection.send_error(msg["id"], "not_set_up", "Overview Extras is not set up")
+        return
+    entry = entries[0]
+    area_id = msg["area_id"]
+    candidates = candidates_by_area(hass).get(area_id, {})
+    new_options = apply_selection(dict(entry.options), area_id, candidates, msg["selected"])
+    if new_options != dict(entry.options):
+        hass.config_entries.async_update_entry(entry, options=new_options)
+        hass.config_entries.async_schedule_reload(entry.entry_id)
+    connection.send_result(msg["id"], {"excluded": new_options.get(CONF_SOURCES_EXCLUDED, {}).get(area_id, {})})
 
 
 def module_url(options: dict) -> str:

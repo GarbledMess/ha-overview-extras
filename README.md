@@ -38,7 +38,7 @@ Go to Settings → Devices & services → Overview Extras → **Configure**. It 
 
 ### Room sources
 
-Pick a room to choose which entities feed it:
+Open the room's own settings (the pencil on a room page, or Settings → Areas → room → ⚙). The source lists sit right under HA's temperature and humidity sensor pickers and save with the dialog's Save button. You can also use Configure → Room sources. Each room has these sources:
 
 | Source | Used as |
 |---|---|

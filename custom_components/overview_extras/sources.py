@@ -61,3 +61,27 @@ def selected_sources(hass: HomeAssistant, options: dict) -> dict[str, dict[str, 
         area_id: {cat: [e for e in ids if e not in excluded(options, area_id, cat)] for cat, ids in cats.items()}
         for area_id, cats in candidates_by_area(hass).items()
     }
+
+
+def apply_selection(
+    options: dict, area_id: str, candidates: dict[str, list[str]], selected: dict[str, list[str]]
+) -> dict:
+    """New options after the user picked `selected` for a room (stores only what was removed)."""
+    all_excluded = dict(options.get(CONF_SOURCES_EXCLUDED, {}))
+    room_excluded = all_excluded.get(area_id, {})
+    new_room: dict[str, list[str]] = {}
+    for cat in CATEGORIES:
+        cands = candidates.get(cat, [])
+        if cat in selected:
+            chosen = set(selected[cat])
+            removed = {e for e in cands if e not in chosen}
+        else:  # category not shown/edited: keep what was there
+            removed = {e for e in room_excluded.get(cat, []) if e in cands}
+        # Keep earlier removals of entities that are temporarily gone, so they stay removed.
+        removed |= {e for e in room_excluded.get(cat, []) if e not in cands}
+        if removed:
+            new_room[cat] = sorted(removed)
+    all_excluded.pop(area_id, None)
+    if new_room:
+        all_excluded[area_id] = new_room
+    return {**options, CONF_SOURCES_EXCLUDED: all_excluded}

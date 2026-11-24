@@ -10,7 +10,7 @@
  * No build step, no dependencies. Load as a dashboard resource (type: module).
  */
 
-const VERSION = "0.4.0";
+const VERSION = "0.5.0";
 
 /* ------------------------------------------------------------------------ */
 /* Constants                                                                 */
@@ -1258,17 +1258,147 @@ function patchStrategyClass(name, cls) {
   cls.__enhancedAreasPatched = true;
 }
 
-(function installStrategyHooks() {
+/* ------------------------------------------------------------------------ */
+/* Room sources inside HA's own room (area) settings dialog                  */
+/* ------------------------------------------------------------------------ */
+/*
+ * HA's area dialog has a "related entities" panel with the room's temperature and humidity
+ * sensor pickers. We add Overview Extras' source lists right below them, and save them when
+ * the dialog's own Save button succeeds. Needs the integration (its websocket commands);
+ * without it, or if HA changes the dialog, nothing is added and the dialog works as normal.
+ */
+
+const SOURCE_LABELS = {
+  temperature: ["Temperature sources", "Averaged for the room's average temperature."],
+  humidity: ["Humidity sources", "Averaged for the room's average humidity."],
+  power: ["Power sources", "Totalled for the room's power."],
+  presence: ["Presence sources", "The room is occupied if any of these is on."],
+  lights: ["Lights", "Counted for the room's lights on."],
+};
+
+class OverviewExtrasAreaSources extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this.selected = null; // {cat: [ids]} once the user changes something
+  }
+  set hass(hass) {
+    this._hass = hass;
+    this.shadowRoot.querySelectorAll("ha-selector").forEach((el) => (el.hass = hass));
+  }
+  async load(hass, areaId) {
+    this._hass = hass;
+    this.areaId = areaId;
+    let data;
+    try {
+      data = await hass.callWS({ type: "overview_extras/area_sources", area_id: areaId });
+    } catch (e) {
+      this.remove(); // integration not set up, or not an admin
+      return;
+    }
+    this._values = {};
+    const cats = Object.keys(SOURCE_LABELS).filter((c) => data.candidates?.[c]?.length);
+    if (!cats.length) {
+      this.remove();
+      return;
+    }
+    if (!customElements.get("ha-selector")) {
+      await Promise.race([customElements.whenDefined("ha-selector"), new Promise((r) => setTimeout(r, 3000))]);
+    }
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host { display: block; }
+        .title { font-weight: var(--ha-font-weight-medium, 500); margin: var(--ha-space-2, 8px) 0 var(--ha-space-1, 4px); color: var(--primary-text-color); }
+        .description { margin: 0 0 var(--ha-space-4, 16px); color: var(--secondary-text-color); font-size: var(--ha-font-size-s, 12px); }
+        ha-selector { display: block; margin-bottom: var(--ha-space-4, 16px); }
+      </style>
+      <div class="title">Overview Extras sources</div>
+      <p class="description">Everything in the room is included, and new entities join automatically. Remove any you don't want.</p>`;
+    for (const cat of cats) {
+      const excluded = data.excluded?.[cat] || [];
+      this._values[cat] = data.candidates[cat].filter((e) => !excluded.includes(e));
+      const el = document.createElement("ha-selector");
+      el.hass = hass;
+      el.selector = { entity: { multiple: true, include_entities: data.candidates[cat] } };
+      el.value = this._values[cat];
+      el.label = SOURCE_LABELS[cat][0];
+      el.helper = SOURCE_LABELS[cat][1];
+      el.addEventListener("value-changed", (ev) => {
+        ev.stopPropagation(); // keep it away from the dialog's own handlers
+        this._values[cat] = ev.detail.value || [];
+        el.value = this._values[cat];
+        this.selected = { ...this._values };
+      });
+      this.shadowRoot.appendChild(el);
+    }
+  }
+  async save() {
+    if (!this.selected) return;
+    await this._hass.callWS({ type: "overview_extras/set_area_sources", area_id: this.areaId, selected: this.selected });
+  }
+}
+customElements.get("overview-extras-area-sources") ||
+  customElements.define("overview-extras-area-sources", OverviewExtrasAreaSources);
+
+function patchAreaDialog(cls) {
+  if (!cls || cls.__enhancedAreasPatched) return;
+  const proto = cls.prototype;
+  const origUpdated = proto.updated;
+  const origUpdate = proto._updateEntry;
+  if (typeof origUpdate !== "function") return; // HA changed the dialog: leave it alone
+  proto.updated = function (changed) {
+    origUpdated?.call(this, changed);
+    try {
+      const areaId = this._params?.entry?.area_id;
+      const root = this.renderRoot || this.shadowRoot;
+      if (!areaId || !root) return;
+      // The related-entities panel holds the temperature/humidity pickers.
+      const pickers = root.querySelectorAll("ha-entity-picker");
+      const anchor = pickers[pickers.length - 1];
+      if (!anchor?.parentElement) return;
+      let el = anchor.parentElement.querySelector("overview-extras-area-sources");
+      if (el && el.areaId === areaId) {
+        el.hass = this.hass;
+        return;
+      }
+      el?.remove();
+      el = document.createElement("overview-extras-area-sources");
+      anchor.parentElement.appendChild(el);
+      el.load(this.hass, areaId);
+    } catch (e) {
+      console.warn("[overview-extras] room dialog", e);
+    }
+  };
+  proto._updateEntry = async function (...args) {
+    const root = this.renderRoot || this.shadowRoot;
+    const el = root?.querySelector("overview-extras-area-sources");
+    const result = await origUpdate.apply(this, args);
+    if (el?.selected && !this._error) {
+      try {
+        await el.save();
+      } catch (e) {
+        console.warn("[overview-extras] saving room sources failed", e);
+      }
+    }
+    return result;
+  };
+  cls.__enhancedAreasPatched = true;
+}
+
+(function installHooks() {
   if (window.__enhancedAreasHooked) return;
   window.__enhancedAreasHooked = true;
+  const AREA_DIALOG = "dialog-area-registry-detail";
   const registry = window.customElements;
   const origDefine = registry.define;
   registry.define = function (name, cls, options) {
     if (VIEW_TRANSFORMS[name]) patchStrategyClass(name, cls);
+    if (name === AREA_DIALOG) patchAreaDialog(cls);
     return origDefine.call(this, name, cls, options);
   };
   // In case HA loaded them before us.
   for (const name of Object.keys(VIEW_TRANSFORMS)) patchStrategyClass(name, registry.get(name));
+  patchAreaDialog(registry.get(AREA_DIALOG));
 })();
 
 /** What HA's built-in `home` dashboard strategy produces; only used if it isn't loaded yet. */

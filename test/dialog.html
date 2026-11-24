@@ -1,0 +1,41 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Room dialog injection test</title>
+<style>body{font-family:Roboto,system-ui,sans-serif;background:#fafafa;padding:16px;--primary-text-color:#1c1c1c;--secondary-text-color:#6b6b6b}</style>
+<script src="mdi-subset.js"></script>
+<script>
+  // Stand-ins for HA's pickers.
+  customElements.define("ha-entity-picker", class extends HTMLElement { connectedCallback() { this.style.cssText = "display:block;border:1px solid #ccc;border-radius:4px;padding:12px;margin-bottom:16px"; this.textContent = this.label + ": " + (this.value || "—"); } });
+  customElements.define("ha-selector", class extends HTMLElement {
+    set value(v) { this._v = v; this.render(); } get value() { return this._v; }
+    connectedCallback() { this.render(); }
+    render() { if (!this.isConnected) return; this.style.cssText = "display:block;border:1px solid #ccc;border-radius:4px;padding:8px 12px;margin-bottom:16px"; this.innerHTML = `<div style="font-size:12px;color:#6b6b6b">${this.label}</div>` + (this._v || []).map((e) => `<span style="display:inline-block;background:#e8eef6;border-radius:16px;padding:4px 10px;margin:4px 4px 0 0;font-size:13px">${e}</span>`).join("") + `<div style="font-size:12px;color:#6b6b6b;margin-top:4px">${this.helper}</div>`; }
+  });
+  window.calls = [];
+  window.hass = { callWS: async (m) => { window.calls.push(m);
+    if (m.type === "overview_extras/area_sources") return { candidates: { temperature: ["sensor.lr_temp_1", "sensor.lr_temp_2", "sensor.radiator_temp"], humidity: ["sensor.lr_hum"], power: ["sensor.tv_power", "sensor.amp_power"], presence: ["binary_sensor.lr_mmwave"], lights: [] }, excluded: { temperature: ["sensor.radiator_temp"] } };
+    return {}; } };
+</script>
+<script type="module">
+  await import("../custom_components/overview_extras/www/overview-extras.js");
+  // Mimics HA's dialog-area-registry-detail: renders the related-entities panel, then _updateEntry saves.
+  class FakeAreaDialog extends HTMLElement {
+    constructor() { super(); this.attachShadow({ mode: "open" }); }
+    get renderRoot() { return this.shadowRoot; }
+    show() {
+      this._params = { entry: { area_id: "living_room" } };
+      this.hass = window.hass;
+      this.shadowRoot.innerHTML = `<h3>Edit area</h3><div class="panel"><div class="content"></div></div><button>Save</button>`;
+      const c = this.shadowRoot.querySelector(".content");
+      for (const l of ["Temperature sensor", "Humidity sensor"]) { const p = document.createElement("ha-entity-picker"); p.label = l; c.appendChild(p); }
+      this.updated(new Map());
+    }
+    updated() {}
+    async _updateEntry() { window.calls.push({ type: "config/area_registry/update" }); this._error = undefined; }
+  }
+  customElements.define("dialog-area-registry-detail", FakeAreaDialog);
+  const d = document.createElement("dialog-area-registry-detail");
+  document.body.appendChild(d);
+  d.show();
+  await new Promise((r) => setTimeout(r, 300));
+  window.ready = true;
+</script></head><body></body></html>

@@ -28,7 +28,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
 )
 
-from .sources import candidates_by_area
+from .sources import apply_selection, candidates_by_area
 from .const import (
     BADGE_OPTIONS,
     CONF_AREA_STRIP,
@@ -103,22 +103,10 @@ class OverviewExtrasOptionsFlow(OptionsFlowWithReload):
         """Untick sources to leave them out. Everything is ticked by default; new entities join automatically."""
         area_id = self._area_id
         candidates = candidates_by_area(self.hass).get(area_id, {c: [] for c in CATEGORIES})
-        all_excluded = self._opts.get(CONF_SOURCES_EXCLUDED, {})
-        room_excluded = all_excluded.get(area_id, {})
+        room_excluded = self._opts.get(CONF_SOURCES_EXCLUDED, {}).get(area_id, {})
 
         if user_input is not None:
-            new_room = {}
-            for cat in CATEGORIES:
-                chosen = set(user_input.get(cat, []))
-                removed = sorted(e for e in candidates[cat] if e not in chosen)
-                # Keep earlier removals of entities that are temporarily gone, so they stay removed.
-                removed += [e for e in room_excluded.get(cat, []) if e not in candidates[cat]]
-                if removed:
-                    new_room[cat] = sorted(set(removed))
-            all_excluded = {k: v for k, v in all_excluded.items() if k != area_id}
-            if new_room:
-                all_excluded[area_id] = new_room
-            self._opts[CONF_SOURCES_EXCLUDED] = all_excluded
+            self._options = apply_selection(self._opts, area_id, candidates, {c: user_input.get(c, []) for c in CATEGORIES if candidates[c]})
             return await self.async_step_init()
 
         fields: dict = {}

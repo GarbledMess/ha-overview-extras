@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+- **Room sources in HA's own room settings.** Open a room → ⋮/pencil → Edit area. Under the temperature and humidity sensor pickers there are now lists for temperature, humidity, power and presence sources, plus lights, and they save with the dialog's Save button. Everything is included by default and new entities join automatically. Configure → Room sources still works too.
+
+**After updating:** restart Home Assistant, then refresh the browser or app.
+
 ## 0.4.0
 
 ### Per-room sources with averages

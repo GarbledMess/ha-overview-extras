@@ -1,7 +1,7 @@
 """Constants for Overview Extras."""
 
 DOMAIN = "overview_extras"
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 URL_BASE = "/overview_extras"
 JS_FILE = "overview-extras.js"

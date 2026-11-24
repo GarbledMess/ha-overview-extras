@@ -86,6 +86,28 @@ async def test_room_sources(hass: HomeAssistant, hass_ws_client) -> None:
     msg = await client.receive_json()
     assert msg["result"]["excluded"] == {living.id: {"temperature": [t3], "power": [p2]}}
 
+    # The room settings dialog reads and saves the same choices.
+    await client.send_json({"id": 2, "type": "overview_extras/area_sources", "area_id": living.id})
+    msg = await client.receive_json()
+    assert sorted(msg["result"]["candidates"]["temperature"]) == sorted([t1, t2, t3])
+    assert msg["result"]["excluded"] == {"temperature": [t3], "power": [p2]}
+    # Dialog: put the radiator sensor back, leave power alone (not sent = unchanged).
+    await client.send_json(
+        {"id": 3, "type": "overview_extras/set_area_sources", "area_id": living.id, "selected": {"temperature": [t1, t2, t3]}}
+    )
+    msg = await client.receive_json()
+    assert msg["success"], msg
+    await hass.async_block_till_done()
+    assert entry.options["sources_excluded"] == {living.id: {"power": [p2]}}
+    assert float(hass.states.get(temp_id).state) == round((21 + 22 + 30) / 3, 2)
+    # ...and take it out again
+    await client.send_json(
+        {"id": 4, "type": "overview_extras/set_area_sources", "area_id": living.id, "selected": {"temperature": [t1, t2]}}
+    )
+    assert (await client.receive_json())["success"]
+    await hass.async_block_till_done()
+    assert entry.options["sources_excluded"] == {living.id: {"temperature": [t3], "power": [p2]}}
+
     # A new temperature sensor added to the room joins automatically.
     t4 = _sensor(hass, ent_reg, living.id, "lr_temp_4", "temperature", "23.0", "°C")
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=15))
