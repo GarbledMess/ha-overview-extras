@@ -1,0 +1,33 @@
+name: Release
+
+# Publishes a GitHub release (which HACS uses for versions and update notifications)
+# whenever the version in manifest.json changes on main. Notes come from CHANGELOG.md.
+on:
+  push:
+    branches: [main]
+    paths:
+      - custom_components/overview_extras/manifest.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read version
+        id: v
+        run: echo "version=$(jq -r .version custom_components/overview_extras/manifest.json)" >> "$GITHUB_OUTPUT"
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "v$VERSION already released"; exit 0
+          fi
+          # Section of CHANGELOG.md for this version
+          awk -v v="$VERSION" '$0 ~ "^## " {p = ($2 == v)} p && $0 !~ "^## " ' CHANGELOG.md > notes.md
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --notes-file notes.md
