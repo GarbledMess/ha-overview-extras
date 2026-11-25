@@ -39,6 +39,8 @@ from .const import (
     CONF_SHOW_POWER,
     CONF_SHOW_PRESENCE,
     CONF_SET_PRIMARY,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL,
     CONF_SOURCES_EXCLUDED,
     CATEGORIES,
     DEFAULT_BADGES,
@@ -143,6 +145,9 @@ class OverviewExtrasOptionsFlow(OptionsFlowWithReload):
                 vol.Optional(CONF_SHOW_PRESENCE, default=o.get(CONF_SHOW_PRESENCE, True)): BooleanSelector(),
                 vol.Optional(CONF_AREA_STRIP, default=o.get(CONF_AREA_STRIP, True)): BooleanSelector(),
                 vol.Optional(CONF_SET_PRIMARY, default=o.get(CONF_SET_PRIMARY, True)): BooleanSelector(),
+                vol.Optional(CONF_UPDATE_INTERVAL, default=o.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)): NumberSelector(
+                    NumberSelectorConfig(min=5, max=600, step=5, mode=NumberSelectorMode.BOX, unit_of_measurement="s")
+                ),
                 vol.Optional(CONF_BADGES, default=o.get(CONF_BADGES, DEFAULT_BADGES)): SelectSelector(
                     SelectSelectorConfig(
                         options=BADGE_OPTIONS,

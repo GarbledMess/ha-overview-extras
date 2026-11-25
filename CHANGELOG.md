@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1
+
+- **Far fewer state changes and database writes.** The room average and total-power sensors now update at most every 30 seconds, combining everything in between. A power plug reporting every second used to mean a write every second; now it's at most 2 a minute. Values are rounded (temperature to 0.1, humidity and power to whole numbers), so steady readings don't write at all. Occupancy and lights still update instantly.
+- New setting: Configure → General settings → **How often room averages and power totals update** (5–600 s, default 30).
+
+**After updating:** restart Home Assistant.
+
 ## 0.5.0
 
 - **Room sources in HA's own room settings.** Open a room → ⋮/pencil → Edit area. Under the temperature and humidity sensor pickers there are now lists for temperature, humidity, power and presence sources, plus lights, and they save with the dialog's Save button. Everything is included by default and new entities join automatically. Configure → Room sources still works too.

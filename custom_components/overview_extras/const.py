@@ -1,7 +1,7 @@
 """Constants for Overview Extras."""
 
 DOMAIN = "overview_extras"
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 
 URL_BASE = "/overview_extras"
 JS_FILE = "overview-extras.js"
@@ -39,3 +39,6 @@ PRESENCE_CLASSES = {"occupancy", "presence", "motion"}
 POWER_FACTORS = {"mW": 0.001, "W": 1.0, "kW": 1000.0, "MW": 1_000_000.0}
 
 PLATFORMS = ["sensor", "binary_sensor"]
+
+CONF_UPDATE_INTERVAL = "update_interval"
+DEFAULT_UPDATE_INTERVAL = 30  # seconds between updates of the averaged/totalled room sensors

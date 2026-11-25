@@ -13,6 +13,11 @@ from pytest_homeassistant_custom_component.common import async_fire_time_changed
 from custom_components.overview_extras.const import DOMAIN
 
 
+async def _tick(hass, seconds=31):
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=seconds))
+    await hass.async_block_till_done()
+
+
 def _sensor(hass, ent_reg, area_id, object_id, device_class, value, unit):
     entry = ent_reg.async_get_or_create(
         "sensor", "test", object_id, suggested_object_id=object_id, original_device_class=device_class
@@ -57,8 +62,8 @@ async def test_room_sources(hass: HomeAssistant, hass_ws_client) -> None:
 
     # Live updates
     hass.states.async_set(t1, "21.0", {"device_class": "temperature", "unit_of_measurement": "°C"})
-    await hass.async_block_till_done()
-    assert float(hass.states.get(temp_id).state) == round((21 + 22 + 30) / 3, 2)
+    await _tick(hass)
+    assert float(hass.states.get(temp_id).state) == round((21 + 22 + 30) / 3, 1)
 
     # Configure -> Room sources -> Living Room: untick the radiator sensor and the amp.
     result = await hass.config_entries.options.async_init(entry.entry_id)
@@ -99,7 +104,7 @@ async def test_room_sources(hass: HomeAssistant, hass_ws_client) -> None:
     assert msg["success"], msg
     await hass.async_block_till_done()
     assert entry.options["sources_excluded"] == {living.id: {"power": [p2]}}
-    assert float(hass.states.get(temp_id).state) == round((21 + 22 + 30) / 3, 2)
+    assert float(hass.states.get(temp_id).state) == round((21 + 22 + 30) / 3, 1)
     # ...and take it out again
     await client.send_json(
         {"id": 4, "type": "overview_extras/set_area_sources", "area_id": living.id, "selected": {"temperature": [t1, t2]}}
@@ -112,7 +117,7 @@ async def test_room_sources(hass: HomeAssistant, hass_ws_client) -> None:
     t4 = _sensor(hass, ent_reg, living.id, "lr_temp_4", "temperature", "23.0", "°C")
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=15))
     await hass.async_block_till_done()
-    assert float(hass.states.get(temp_id).state) == round((21 + 22 + 23) / 3, 2)
+    assert float(hass.states.get(temp_id).state) == round((21 + 22 + 23) / 3, 1)
     assert t4 in hass.states.get(temp_id).attributes["sources"]
     assert t3 not in hass.states.get(temp_id).attributes["sources"]
 
@@ -130,3 +135,38 @@ async def test_room_sources(hass: HomeAssistant, hass_ws_client) -> None:
     await hass.async_block_till_done()
     assert area_reg.async_get_area(living.id).temperature_entity_id is None
     assert area_reg.async_get_area(kitchen.id).temperature_entity_id == k_temp
+
+
+async def test_chatty_sources_are_throttled(hass: HomeAssistant) -> None:
+    """A power plug reporting every second must not become a state write every second."""
+    assert await async_setup_component(hass, "frontend", {})
+    area_reg = ar.async_get(hass)
+    ent_reg = er.async_get(hass)
+    office = area_reg.async_create("Office")
+    plug = _sensor(hass, ent_reg, office.id, "desk_power", "power", "100.0", "W")
+
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    await hass.async_block_till_done()
+    power_id = f"sensor.{DOMAIN}_{office.id}_power"
+
+    changes = []
+    hass.bus.async_listen("state_changed", lambda e: changes.append(e) if e.data["entity_id"] == power_id else None)
+
+    # 60 readings, one a second, wobbling around 100-160 W
+    for i in range(60):
+        hass.states.async_set(plug, str(100 + (i % 7) * 10 + 0.3), {"device_class": "power", "unit_of_measurement": "W"})
+        await _tick(hass, 1)
+    await _tick(hass, 31)
+    # Default 30 s interval: a handful of writes, not 60.
+    assert 1 <= len(changes) <= 4, len(changes)
+    # Whole watts, and the latest reading wins.
+    assert hass.states.get(power_id).state == str(round(100 + (59 % 7) * 10 + 0.3))
+
+    # Steady readings don't write at all.
+    changes.clear()
+    for _ in range(10):
+        hass.states.async_set(plug, "150.2", {"device_class": "power", "unit_of_measurement": "W"})
+        hass.states.async_set(plug, "150.4", {"device_class": "power", "unit_of_measurement": "W"})
+        await _tick(hass, 31)
+    assert len(changes) <= 1, len(changes)

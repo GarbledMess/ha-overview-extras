@@ -10,7 +10,7 @@
  * No build step, no dependencies. Load as a dashboard resource (type: module).
  */
 
-const VERSION = "0.5.0";
+const VERSION = "0.5.1";
 
 /* ------------------------------------------------------------------------ */
 /* Constants                                                                 */

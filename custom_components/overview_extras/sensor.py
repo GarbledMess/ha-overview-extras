@@ -8,13 +8,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_SET_PRIMARY, POWER_FACTORS
+from .const import CONF_SET_PRIMARY, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL, POWER_FACTORS
 from .entity import RoomSummaryEntity
 from .sources import selected_sources
 
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddEntitiesCallback) -> None:
     area_reg = ar.async_get(hass)
+    interval = float(entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
     entities: list[SensorEntity] = []
     for area_id, cats in selected_sources(hass, dict(entry.options)).items():
         if (area := area_reg.async_get_area(area_id)) is None:
@@ -27,6 +28,9 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddE
             entities.append(RoomPower(area_id, area.name, "power", "power", cats["power"]))
         if cats["lights"]:
             entities.append(RoomLightsOn(area_id, area.name, "lights", "lights on", cats["lights"]))
+    for entity in entities:
+        if not isinstance(entity, RoomLightsOn):
+            entity.throttle = interval
     async_add_entities(entities)
 
 
@@ -81,7 +85,8 @@ class RoomAverage(_RoomSensor):
                 values.append(value)
         if self._category == "temperature":
             self._attr_native_unit_of_measurement = unit
-        self._attr_native_value = round(sum(values) / len(values), 2) if values else None
+        digits = 1 if self._category == "temperature" else 0
+        self._attr_native_value = round(sum(values) / len(values), digits) if values else None
         self._attr_available = bool(values)
 
 
@@ -107,7 +112,7 @@ class RoomPower(_RoomSensor):
             if factor is not None:
                 total += value * factor
                 count += 1
-        self._attr_native_value = round(total, 1) if count else None
+        self._attr_native_value = round(total) if count else None
         self._attr_available = bool(count)
 
 

@@ -51,11 +51,13 @@
           "badges": "Badges on room cards (in priority order)",
           "max_badges": "Maximum badges per room card",
           "exclude_entities": "Entities to ignore completely",
-          "set_primary": "Use the room averages as each room's temperature and humidity"
+          "set_primary": "Use the room averages as each room's temperature and humidity",
+          "update_interval": "How often room averages and power totals update"
         },
         "data_description": {
           "max_badges": "Room cards are small; extra badges are dropped.",
-          "set_primary": "Only fills rooms where you haven't chosen a temperature or humidity sensor yourself in the room's settings."
+          "set_primary": "Only fills rooms where you haven't chosen a temperature or humidity sensor yourself in the room's settings.",
+          "update_interval": "In seconds. Changes in between are combined into one update, which keeps database writes down. Occupancy and lights always update immediately."
         }
       }
     },
